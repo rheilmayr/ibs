@@ -1,2 +1,2 @@
 # ibs
-Tools to clean and analyze IBS data. Collaboration between MCC, UCSB and UH.
+Tools to clean and analyze IBS data. Collaboration between researchers at MCC, UCSB and UH.
