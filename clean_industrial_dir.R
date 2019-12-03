@@ -26,12 +26,26 @@ data <- pdf_data(pdf_file) %>%
          ifelse(text ==";","no_workers",
          ifelse(text =="`","address",
          ifelse(text == "%","tel_no",
-         ifelse(text == "%","fax_no",
-         ifelse(text == "$","head_off_tel_no",
+         ifelse(text == "#","fax_no",
          ifelse(text == "$","head_off_tel_no",
          ifelse(text == "@","head_off_fax_no",
-         ifelse(text == ">","Contact_person",
+         ifelse(text == ">","contact_person",
          ifelse(text == "<","department_occupation",
-         ifelse(text == "E","email",""))))))))))))
-  
-
+         ifelse(text == "E","email",NA))))))))))) %>%
+         fill(category) %>%
+  mutate(text = str_replace(text,",","")) %>%
+  mutate(text = str_replace(text,'"',"")) %>%
+  mutate(text = str_replace(text,"[.]","")) %>%
+  mutate(text = str_replace(text,"/"," ")) %>%
+  mutate(category = ifelse(str_detect(text,"^[:upper:]+$") & category != "main_product","company_name",category)) %>%
+  #mutate(category = ifelse(str_detect(text,"^[:upper:]+$") & category == "fax_no","company_name",category)) %>%
+  mutate(category = ifelse(is.na(category), "company_name",category)) %>%
+  mutate(category = ifelse(text =="SH", "contact_person",category)) %>%
+  mutate(category = ifelse(text =="III", "address",category)) %>%
+  mutate(category = ifelse(text =="BUAH DHT", "company_name",category)) %>%
+  mutate(comp_id = ifelse(category =="company_name",paste0("company","_",y),NA)) %>%
+  fill(comp_id) %>%
+  group_by(comp_id) %>%
+  filter(text != ">" & text != "^" & text != ";" & text != "<" & text != ">" & text != "#" & text != "@" & text != "`" & text != "E" & text != "%" & text != "$") %>%
+  group_by(comp_id,category) %>%
+  summarise(combo_3 = paste(text, collapse = " "))
