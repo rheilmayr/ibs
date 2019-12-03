@@ -1,7 +1,6 @@
 library(pdftools)
 library(jsonlite)
 
-
 # set dropbox directory intput --------------------------------------------
 
 file_name <- list.files(paste(Sys.getenv(x = "APPDATA"),"Dropbox", sep="/"), pattern = "*.json", full.names = T)
@@ -33,19 +32,32 @@ data <- pdf_data(pdf_file) %>%
          ifelse(text == "<","department_occupation",
          ifelse(text == "E","email",NA))))))))))) %>%
          fill(category) %>%
-  mutate(text = str_replace(text,",","")) %>%
+  mutate(text = str_replace(text,","," ")) %>%
+  mutate(text = str_replace(text,"-"," ")) %>%
   mutate(text = str_replace(text,'"',"")) %>%
   mutate(text = str_replace(text,"[.]","")) %>%
   mutate(text = str_replace(text,"/"," ")) %>%
+  mutate(text = trimws(text,which="right")) %>%
   mutate(category = ifelse(str_detect(text,"^[:upper:]+$") & category != "main_product","company_name",category)) %>%
+  mutate(category = ifelse(str_detect(text,"^[:upper:]+$ ^[:upper:]+$") & category !="company name","company_name",category)) %>%
+  mutate(category = ifelse(str_detect(text,"PT"),"company_name",category)) %>%
   #mutate(category = ifelse(str_detect(text,"^[:upper:]+$") & category == "fax_no","company_name",category)) %>%
   mutate(category = ifelse(is.na(category), "company_name",category)) %>%
   mutate(category = ifelse(text =="SH", "contact_person",category)) %>%
-  mutate(category = ifelse(text =="III", "address",category)) %>%
+  mutate(category = ifelse(text =="E", "email",category)) %>%
+  mutate(category = ifelse(text =="M", "address",category)) %>%
+  mutate(category = ifelse(text =="S", "address",category)) %>%
+  #mutate(category = ifelse(text =="III", "address",category)) %>%
+  #mutate(category = ifelse(text =="II", "address",category)) %>%
+  #mutate(category = ifelse(text =="IV", "address",category)) %>%
   mutate(category = ifelse(text =="BUAH DHT", "company_name",category)) %>%
-  mutate(comp_id = ifelse(category =="company_name",paste0("company","_",y),NA)) %>%
-  fill(comp_id) %>%
-  group_by(comp_id) %>%
+  #mutate(comp_id = ifelse(category =="company_name",paste0("company","_",y),NA)) %>%
+  #fill(comp_id) %>%
+  #group_by(comp_id) %>%
   filter(text != ">" & text != "^" & text != ";" & text != "<" & text != ">" & text != "#" & text != "@" & text != "`" & text != "E" & text != "%" & text != "$") %>%
-  group_by(comp_id,category) %>%
-  summarise(combo_3 = paste(text, collapse = " "))
+  group_by(category, grp = cumsum(category == "company_name" & lag(category, default = "") != "company_name")) %>%
+  summarise(desc = paste(text, collapse =  " ")) %>%
+  pivot_wider(id_cols = grp, names_from = category, values_from = desc) %>%
+  #group_by(comp_id,category) %>%
+  #summarise(comp_info = paste(text, collapse = " ")) %>%
+  select("company_name","main_product","address","no_workers","tel_no","fax_no","head_off_tel_no","head_off_fax_no","email","contact_person","department_occupation")
