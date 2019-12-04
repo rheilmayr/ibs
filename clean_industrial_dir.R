@@ -62,7 +62,7 @@ data <- pdf_data(pdf_file) %>%
   mutate(category = ifelse(lag(category) == "address" & lead(category) == "address","address",category)) %>% # if before and after value in row is address, change in between value to address
   mutate(category = ifelse(lag(category) == "company_name" & lead(category) == "company_name","company_name",category)) %>% # if before and after value in row is company name, change in between value to company name
   mutate(category = ifelse(lag(category) == "department_occupation" & lead(category) == "department_occupation","department_occupation",category)) %>% # if before and after value in row is department occupation, change in between value to department occupation
-  mutate(category = ifelse(is.na(category),"company_name",category)) %>% # any rows with NA is company name
+  mutate(category = ifelse(is.na(category),"company_name",category)) %>% # any rows with NA is company name  
   filter(text != ">" & text != "^" & text != ";" & text != "<" & text != ">" & text != "#" & text != "@" & text != "`" & text != "E" & text != "%" & text != "$") %>% # remove delimiters
   mutate(category = ifelse(str_detect(text,"@"),"email",category)) %>% # remove emails that are part of company names
   group_by(category, grp = cumsum(category == "company_name" & lag(category, default = "") != "company_name")) %>%  # split into columns at each company name
