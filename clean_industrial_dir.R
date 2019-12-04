@@ -1,5 +1,8 @@
 library(pdftools)
 library(jsonlite)
+library(dplyr)
+library(tidyverse)
+library(openxlsx)
 
 # set dropbox directory intput --------------------------------------------
 
@@ -14,7 +17,7 @@ setwd(wdir)
 
 # Read pdf data -----------------------------------------------------------
 
-pdf_file = paste0(wdir,"Direktori_Industri_Pengolahan_Indonesia_2003-pages-43-59.pdf")
+pdf_file = paste0(wdir,"pdf\\Direktori_Industri_Pengolahan_Indonesia_2003-pages-43-59.pdf")
 
 # Cleaning up data -------------------------------------------------------
 
@@ -60,4 +63,15 @@ data <- pdf_data(pdf_file) %>%
   pivot_wider(id_cols = grp, names_from = category, values_from = desc) %>%
   #group_by(comp_id,category) %>%
   #summarise(comp_info = paste(text, collapse = " ")) %>%
-  select("company_name","main_product","address","no_workers","tel_no","fax_no","head_off_tel_no","head_off_fax_no","email","contact_person","department_occupation")
+  select("company_name","main_product","address","no_workers","tel_no","fax_no","head_off_tel_no","head_off_fax_no","email","contact_person","department_occupation") %>%
+  mutate(main_product = str_replace(main_product,"produksi utama main product","")) %>%
+  mutate(main_product = str_replace(main_product,"C P O","CPO")) %>%
+  mutate(no_workers = str_replace(no_workers,"tenaga kerja person engaged","")) %>%
+  mutate(head_off_tel_no = str_replace(head_off_tel_no,"telpon kantor pusat head office phone number","")) %>%
+  mutate(tel_no = str_replace(tel_no,"telepon","")) %>%
+  mutate(no_workers = sub("\\s+[^ ]+$", "",no_workers))
+
+
+# Export to excel file
+output_filename <- tools::file_path_sans_ext(basename(pdf_file))
+write.xlsx(data,file=paste0(wdir,"\\extracted_data\\",output_filename,".xlsx")) 
