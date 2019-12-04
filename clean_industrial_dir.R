@@ -1,5 +1,5 @@
 
-#### Using pdftools to extract text from Direkti Industri Pengolahan Indonesia into tabular format
+#### Using pdftools to extract text from Direkti Industri Pengolahan / Manufaktur Indonesia into tabular format
 
 # Load required libraries ------------------------------------------------
 library(pdftools)
@@ -83,7 +83,7 @@ data <- pdf_data(pdf_file) %>%
   mutate(no_workers = sub("\\s+[^ ]+$", "",no_workers)) %>%
   mutate_all(na_if,"") %>%
   drop_na(main_product) %>%
-  filter(stringr::str_detect(main_product, 'CPO|SAWIT'))
+  filter(str_detect(main_product, 'CPO|SAWIT'))
 
 
 # Export to excel file
