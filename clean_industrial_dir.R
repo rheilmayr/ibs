@@ -28,6 +28,7 @@ pdf_file = paste0(wdir,"pdf\\Direktori_Industri_Pengolahan_Indonesia_2003-pages-
 data <- pdf_data(pdf_file) %>% 
   bind_rows() %>%
   filter(height <=8) %>%
+  # Setting delimiters to get different information in pdf file
   mutate(category = ifelse(text =="^","main_product",
          ifelse(text ==";","no_workers",
          ifelse(text =="`","address",
@@ -44,29 +45,23 @@ data <- pdf_data(pdf_file) %>%
   mutate(text = str_replace(text,'"',"")) %>% # remove quotes
   mutate(text = str_replace(text,"[.]","")) %>% # remove periods
   mutate(text = str_replace(text,"/"," ")) %>% # remove forward slashes
-  mutate(text = str_replace(text,"[(]"," ")) %>% # remove parenthesis
-  mutate(text = str_replace(text,"[)]"," ")) %>% # remove paraethesis
+  mutate(text = str_replace(text,"[(]"," ")) %>% # remove left parenthesis
+  mutate(text = str_replace(text,"[)]"," ")) %>% # remove right parenthesis
   mutate(text = trimws(text,which="right")) %>% # trim right whitespace
   mutate(text = trimws(text,which="left")) %>% # trim left whitespace
   mutate(category = ifelse(str_detect(text,"^[:upper:]+$") & category != "main_product","company_name",category)) %>% # anything with uppercase to company name
   mutate(category = ifelse(str_detect(text,"^[:upper:]+$ ^[:upper:]+$") & category !="company name","company_name",category)) %>% # anything with two uppercase words to company name
   mutate(category = ifelse(str_detect(text,"PT"),"company_name",category)) %>% # anything with 'PT' to company name
-  #mutate(category = ifelse(str_detect(text,"^[:upper:]+$") & category == "fax_no","company_name",category)) %>%
   mutate(category = ifelse(is.na(category), "company_name",category)) %>% # NA categories at top rows to company name (first company)
   mutate(category = ifelse(text =="SH", "contact_person",category)) %>% # SH is part of contact person
   mutate(category = ifelse(text =="SE", "contact_person",category)) %>% # SE is part of contact person
   mutate(category = ifelse(text =="E", "email",category)) %>% # E is part of email
   mutate(category = ifelse(text =="M", "address",category)) %>% # M is part of address
   mutate(category = ifelse(text =="S", "address",category)) %>% # S is part of address
-  #mutate(category = ifelse(text =="III", "company_name",category)) %>%
-  #mutate(category = ifelse(text =="II", "company_name",category)) %>%
-  #mutate(category = ifelse(text =="IV", "company_name",category)) %>%
   mutate(category = ifelse(text =="BUAH DHT", "company_name",category)) %>% # BUAH DHT is part of company name
-  #mutate(category = ifelse(category == lead(category) & lag(category) == "category","company_name",category)) %>%
   mutate(category = ifelse(lag(category) == "address" & lead(category) == "address","address",category)) %>% # if before and after value in row is address, change in between value to address
   mutate(category = ifelse(lag(category) == "company_name" & lead(category) == "company_name","company_name",category)) %>% # if before and after value in row is company name, change in between value to company name
   mutate(category = ifelse(lag(category) == "department_occupation" & lead(category) == "department_occupation","department_occupation",category)) %>% # if before and after value in row is department occupation, change in between value to department occupation
-  #mutate(category = ifelse(lag(category) == "contact_person" & lead(category) == "contact_person","contact_person",category)) %>%
   mutate(category = ifelse(is.na(category),"company_name",category)) %>% # any rows with NA is company name
   filter(text != ">" & text != "^" & text != ";" & text != "<" & text != ">" & text != "#" & text != "@" & text != "`" & text != "E" & text != "%" & text != "$") %>% # remove delimiters
   mutate(category = ifelse(str_detect(text,"@"),"email",category)) %>% # remove emails that are part of company names
@@ -86,6 +81,7 @@ data <- pdf_data(pdf_file) %>%
   filter(str_detect(main_product, 'CPO|SAWIT')) # filter only palm products (includes CPO,sawit)
 
 
-# Export to excel file
+# Export to excel file --------------------------------------------
+
 output_filename <- tools::file_path_sans_ext(basename(pdf_file))
 write.xlsx(data,file=paste0(wdir,"\\extracted_data\\",output_filename,".xlsx")) 
