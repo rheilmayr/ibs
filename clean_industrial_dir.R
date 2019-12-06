@@ -78,10 +78,11 @@ data_2003 <- pdf_data(pdf_file) %>%
   mutate(no_workers = str_replace(no_workers,"tenaga kerja person engaged","")) %>% # remove erroneous values in column
   mutate(head_off_tel_no = str_replace(head_off_tel_no,"telpon kantor pusat head office phone number","")) %>% # remove erroneous values in column
   mutate(tel_no = str_replace(tel_no,"telepon","")) %>% # remove erroneous values in column
+  mutate(address = str_replace(address,"alamat address","")) %>% # remove erroneous values in column
   mutate(no_workers = sub("\\s+[^ ]+$", "",no_workers)) %>% # remove additional numbers in no of workers column
   mutate_all(na_if,"") %>% # remove any rows with no values
   drop_na(main_product) %>% # drop rows with NA's in main product column
-  filter(str_detect(main_product, 'CPO|SAWIT|PALM')) # filter only palm products (includes CPO,sawit)
+  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) # filter only palm products (includes CPO,sawit)
 
 
 # Export to excel file --------------------------------------------
@@ -149,11 +150,12 @@ data_2015 <- pdf_data(pdf_file) %>%
   mutate(tel_no = str_replace(tel_no,"phone number","")) %>% # remove erroneous values in column
   mutate(tel_no = str_replace(tel_no,"telepon","")) %>% # remove erroneous values in column
   mutate(fax_no = str_replace(fax_no,"fax pabrik fax number of establishment","")) %>% # remove erroneous values in column
+  mutate(address = str_replace(address,"alamat pabrik address of establishment","")) %>% # remove erroneous values in column
   mutate(head_off_address = str_replace(head_off_address,"alamat kantor pusat address of head office telpon kantor pusat head office phone number fax kantor pusat head office fax number",""))	%>%
   mutate(no_workers = sub("\\s+[^ ]+$", "",no_workers)) %>% # remove additional numbers in no of workers column
   mutate_all(na_if,"") %>% # remove any rows with no values
   drop_na(main_product) %>% # drop rows with NA's in main product column
-  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO')) # filter only palm products (includes CPO,sawit)
+  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) # filter only palm products (includes CPO,sawit)
 
 
 # Export to excel file --------------------------------------------
