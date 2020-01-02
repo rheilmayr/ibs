@@ -19,24 +19,22 @@ dropbox_dir <- file_content$path
 wdir <- paste0(dropbox_dir,"\\kraus\\data\\direktori_industri\\")
 setwd(wdir)
 
-# pre2008
+# pre2008 pdf's
 
 # Read pdf file ----------------------------------------------------------
-
 pre2008 <- paste0(wdir,"pdf\\pre2008\\")
 setwd(pre2008)
 
 filenames <- list.files(pattern=".*pdf")
 
 for (i in filenames) {
-pdf_file = paste0(pre2008,i)
+  pdf_file = paste0(pre2008,i)
 
-# get report year
-year <- str_extract_all(i, "2\\d{3}", simplify = T)
-#year <- yearExtract(pdf_file)
+  # get report year
+  year <- str_extract_all(i, "2\\d{3}", simplify = T)
+  #year <- yearExtract(pdf_file)
 
 # Cleaning up data -------------------------------------------------------
-
 data <- pdf_data(pdf_file) %>% 
   bind_rows() %>%
   filter(height <=8) %>%
@@ -101,8 +99,9 @@ write.xlsx(data,file=paste0(year,".xlsx"))
 
 }
 
-# post 2008
+# post 2008 pdf's
 
+# Read pdf file ----------------------------------------------------------
 post2008 <- paste0(wdir,"pdf\\post2008\\")
 setwd(post2008)
 
