@@ -19,15 +19,25 @@ dropbox_dir <- file_content$path
 wdir <- paste0(dropbox_dir,"\\kraus\\data\\direktori_industri\\")
 setwd(wdir)
 
-# 2003
+# pre2008
 
 # Read pdf file ----------------------------------------------------------
 
-pdf_file = paste0(wdir,"pdf\\Direktori_Industri_Pengolahan_Indonesia_2003-pages-43-59.pdf")
+pre2008 <- paste0(wdir,"pdf\\pre2008\\")
+setwd(pre2008)
+
+filenames <- list.files(pattern=".*pdf")
+
+for (i in filenames) {
+pdf_file = paste0(pre2008,i)
+
+# get report year
+year <- str_extract_all(i, "2\\d{3}", simplify = T)
+#year <- yearExtract(pdf_file)
 
 # Cleaning up data -------------------------------------------------------
 
-data_2003 <- pdf_data(pdf_file) %>% 
+data <- pdf_data(pdf_file) %>% 
   bind_rows() %>%
   filter(height <=8) %>%
   # Setting delimiters to get different information in pdf file
@@ -82,24 +92,30 @@ data_2003 <- pdf_data(pdf_file) %>%
   mutate(no_workers = sub("\\s+[^ ]+$", "",no_workers)) %>% # remove additional numbers in no of workers column
   mutate_all(na_if,"") %>% # remove any rows with no values
   drop_na(main_product) %>% # drop rows with NA's in main product column
-  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) # filter only palm products (includes CPO,sawit)
-
+  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) %>% # filter only palm products (includes CPO,sawit) %>%
+  add_column(year=year)
 
 # Export to excel file --------------------------------------------
-
 output_filename <- tools::file_path_sans_ext(basename(pdf_file))
-write.xlsx(data_2003,file=paste0(wdir,"\\extracted_data\\",output_filename,".xlsx")) 
+write.xlsx(data,file=paste0(year,".xlsx")) 
 
+}
 
-# 2015
+# post 2008
 
-# Read pdf file ----------------------------------------------------------
+post2008 <- paste0(wdir,"pdf\\post2008\\")
+setwd(post2008)
 
-pdf_file = paste0(wdir,"pdf\\48660-ID-direktori-industri-manufaktur-indonesia-2015-pages-63-76.pdf")
+filenames <- list.files(pattern=".*pdf")
 
-# Cleaning up data -------------------------------------------------------
-
-data_2015 <- pdf_data(pdf_file) %>% 
+for (i in filenames) {
+  pdf_file = paste0(post2008,i)
+  
+  # get report year
+  year <- str_extract_all(i, "2\\d{3}", simplify = T)
+  #year <- yearExtract(pdf_file)
+  
+data <- pdf_data(pdf_file) %>% 
   bind_rows() %>%
   filter(height <=8) %>%
   # Setting delimiters to get different information in pdf file
@@ -157,9 +173,8 @@ data_2015 <- pdf_data(pdf_file) %>%
   drop_na(main_product) %>% # drop rows with NA's in main product column
   filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) # filter only palm products (includes CPO,sawit)
 
-
 # Export to excel file --------------------------------------------
-
 output_filename <- tools::file_path_sans_ext(basename(pdf_file))
-write.xlsx(data_2015,file=paste0(wdir,"\\extracted_data\\",output_filename,".xlsx")) 
+write.xlsx(data,file=paste0(year,".xlsx")) 
 
+}
