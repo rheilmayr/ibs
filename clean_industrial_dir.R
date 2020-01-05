@@ -21,12 +21,12 @@ setwd(wdir)
 
 # pre2008 pdf's
 
-# Read pdf file ----------------------------------------------------------
+# Set working directory and get list of pdfs in folder --------------------
 pre2008 <- paste0(wdir,"pdf\\pre2008\\")
 setwd(pre2008)
-
 filenames <- list.files(pattern=".*pdf")
 
+## Loop through files and generate xlsx files
 for (i in filenames) {
   pdf_file = paste0(pre2008,i)
 
@@ -90,7 +90,7 @@ data <- pdf_data(pdf_file) %>%
   mutate(no_workers = sub("\\s+[^ ]+$", "",no_workers)) %>% # remove additional numbers in no of workers column
   mutate_all(na_if,"") %>% # remove any rows with no values
   drop_na(main_product) %>% # drop rows with NA's in main product column
-  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) %>% # filter only palm products (includes CPO,sawit) %>%
+  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) %>% # filter only palm products (includes CPO,sawit) 
   add_column(year=year)
 
 # Export to excel file --------------------------------------------
@@ -101,12 +101,12 @@ write.xlsx(data,file=paste0(year,".xlsx"))
 
 # post 2008 pdf's
 
-# Read pdf file ----------------------------------------------------------
+# Set working directory and get list of pdfs in folder --------------------
 post2008 <- paste0(wdir,"pdf\\post2008\\")
 setwd(post2008)
-
 filenames <- list.files(pattern=".*pdf")
 
+## Loop through files and generate xlsx files
 for (i in filenames) {
   pdf_file = paste0(post2008,i)
   
@@ -170,7 +170,8 @@ data <- pdf_data(pdf_file) %>%
   mutate(no_workers = sub("\\s+[^ ]+$", "",no_workers)) %>% # remove additional numbers in no of workers column
   mutate_all(na_if,"") %>% # remove any rows with no values
   drop_na(main_product) %>% # drop rows with NA's in main product column
-  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) # filter only palm products (includes CPO,sawit)
+  filter(str_detect(main_product, 'CPO|SAWIT|PALM|RBDPO|GORENG')) %>% # filter only palm products (includes CPO,sawit) 
+  add_column(year=year)
 
 # Export to excel file --------------------------------------------
 output_filename <- tools::file_path_sans_ext(basename(pdf_file))
