@@ -1,10 +1,7 @@
 # Load required libraries ------------------------------------------------
-library(pdftools)
 library(jsonlite)
 library(dplyr)
-library(tidyverse)
 library(openxlsx)
-library(readxl)
 
 # set dropbox directory intput --------------------------------------------
 
