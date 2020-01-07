@@ -14,7 +14,7 @@ dropbox_dir <- file_content$path
 wdir <- paste0(dropbox_dir,"\\kraus\\data\\direktori_industri\\pdf\\")
 
 
-# Loop through folder and merge excel files
+# Loop through folder and merge excel files -----------------------------
 
 # pre 2008
 pre2008 <- paste0(wdir,"pre2008\\clean\\")
