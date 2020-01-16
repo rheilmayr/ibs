@@ -69,7 +69,7 @@ data <- pdf_data(pdf_file) %>%
   mutate(category = ifelse(text =="M", "address",category)) %>% # M is part of address
   mutate(category = ifelse(text =="S", "address",category)) %>% # S is part of address
   mutate(category = ifelse(text =="BUAH DHT", "company_name",category)) %>% # BUAH DHT is part of company name
-  mutate(category = ifelse(text =="SIRINGO RINGO", "company_name",category)) %>% # SIRINGO RINFO is part of company name
+  mutate(category = ifelse(text =="SIRINGO RINGO", "company_name",category)) %>% # SIRINGO RINGO is part of company name
   mutate(category = ifelse(lag(category) == "address" & lead(category) == "address","address",category)) %>% # if before and after value in row is address, change in between value to address
   mutate(category = ifelse(lag(category) == "company_name" & lead(category) == "company_name","company_name",category)) %>% # if before and after value in row is company name, change in between value to company name
   mutate(category = ifelse(lag(category) == "department_occupation" & lead(category) == "department_occupation","department_occupation",category)) %>% # if before and after value in row is department occupation, change in between value to department occupation
@@ -146,7 +146,7 @@ data <- pdf_data(pdf_file) %>%
   #mutate(category = ifelse(text =="M", "address",category)) %>% # M is part of address
   #mutate(category = ifelse(text =="S", "address",category)) %>% # S is part of address
   mutate(category = ifelse(text =="BUAH DHT", "company_name",category)) %>% # BUAH DHT is part of company name
-  mutate(category = ifelse(text =="SIRINGO RINGO", "company_name",category)) %>% # BUAH DHT is part of company name
+  mutate(category = ifelse(text =="SIRINGO RINGO", "company_name",category)) %>% # SIRINGO RINGO is part of company name
   mutate(category = ifelse(lag(category) == "address" & lead(category) == "address","address",category)) %>% # if before and after value in row is address, change in between value to address
   mutate(category = ifelse(lag(category) == "company_name" & lead(category) == "company_name","company_name",category)) %>% # if before and after value in row is company name, change in between value to company name
   #mutate(category = ifelse(lag(category) == "department_occupation" & lead(category) == "department_occupation","department_occupation",category)) %>% # if before and after value in row is department occupation, change in between value to department occupation
