@@ -22,23 +22,22 @@ tqdm.pandas()
 
 # Set working directories
 dropbox_dir = dirfind.guess_dropbox_dir()
-input_dir = dropbox_dir + 'kraus/data/ucsb/'
-output_dir = dropbox_dir + 'kraus/data/ibs/'
-ibs_dir = dropbox_dir + 'kraus/data/ibs/'
+akas_dir = dropbox_dir + 'Trase/Indonesia/mill_lists/merge/input/'
+data_dir = dropbox_dir + 'kraus/data/'
 
-mills_xlsx = input_dir + 'mills_20200124.xlsx'
+mills_xlsx = data_dir + 'ucsb/mills_20200124.xlsx'
 mills_df = pd.read_excel(mills_xlsx)
 
 # Remove whitespaces from data frame
 mills_df = mills_df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
 # Read mill names aka file
-mill_aka_csv = input_dir + 'aka_mill_names.csv'
+mill_aka_csv = akas_dir + 'aka_mill_names.csv'
 mill_aka_df = pd.read_csv(mill_aka_csv,encoding="ISO-8859-1")
 mill_aka_df['mill_name'] = mill_aka_df['mill_name'].astype(str)
 
 # Read parent company aka file
-pco_aka_csv = input_dir + 'aka_pco_names.csv'
+pco_aka_csv = akas_dir + 'aka_pco_names.csv'
 pco_aka_df = pd.read_csv(pco_aka_csv,encoding="utf-8")
 pco_aka_df['parent'] = pco_aka_df['parent'].astype(str)
 
@@ -51,7 +50,7 @@ pco_names = pco_names.rename(columns = {'parent_co':'parent'})
 pco_aka_df = pd.concat([pco_aka_df,pco_names],ignore_index=False,sort=True)
 
 ## Read data from Valentin's List
-gm_xlsx = ibs_dir + 'named_unref.xlsx'
+gm_xlsx = data_dir + 'ibs/named_unref.xlsx'
 gm_df = pd.read_excel(gm_xlsx,encoding="utf-8")
 gm_df['mill_name'] = gm_df['matched_resolved_company_name'].astype(str)
 gm_df['parent_co'] = gm_df['matched_resolved_company_name'].astype(str)
@@ -163,8 +162,16 @@ mco_tr_df = mco_tr_df.assign(mco_matches=np.core.defchararray.split(mco_tr_df.mc
 # Join mill and distance match df's
 match_df = mbm_tr_df.merge(mco_tr_df, on='firm_id', how='inner', suffixes=('_1', '_2'))
 
-
+# Clean up matched mill and mill company columns
 match_df['comb_match'] = [list(set(a).intersection(set(b))) for a, b in zip(match_df.name_matches, match_df.mco_matches)]
+match_df['name_matches'] = match_df.name_matches.apply(lambda x: ', '.join([str(i) for i in x]))
+match_df['mco_matches'] = match_df.mco_matches.apply(lambda x: ', '.join([str(i) for i in x]))
 match_df['comb_match'] = match_df.comb_match.apply(lambda x: ', '.join([str(i) for i in x]))
 match_df = match_df.replace(r'^\s*$', np.nan, regex=True)
 
+# Join matched dataframe and original input dataset
+match_df['firm_id'] = match_df['firm_id'].astype(int)
+match_add_df = match_df.merge(gm_df[['firm_id','matched_resolved_company_name','district_name','kec_name','village_name','year']], on='firm_id', how='outer')
+
+# Export to excel
+match_add_df.to_excel(data_dir + 'ucsb/md_millMatching.xlsx',index=False)
