@@ -65,8 +65,6 @@ pc_own_changed
 ibs_exp_pc <- ibs_full %>%
   select(firm_id,year,export_pct_imp)
 
-
-
 # count firms that export
 count_firm_exp <- ibs_exp_pc %>%
   mutate(exp = ifelse(export_pct_imp > 0 ,"1","0")) %>%
