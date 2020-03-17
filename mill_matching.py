@@ -6,8 +6,9 @@ Created on Thu Jan 23 09:21:43 2020
 """
 ###############################################################################
 #### This script generates matrices of mill and mill company names
-#### matches for every mill from an external dataset against mills from
-#### the aka files
+#### matches for every mill from an external dataset against a master mill 
+#### dataset and aka file and get a list of matches based
+#### on a matching threshold
 ###############################################################################
 
 # #############################
@@ -25,7 +26,7 @@ dropbox_dir = dirfind.guess_dropbox_dir()
 akas_dir = dropbox_dir + 'Trase/Indonesia/mill_lists/merge/input/'
 data_dir = dropbox_dir + 'kraus/data/'
 
-mills_xlsx = data_dir + 'ucsb/mills_20200124.xlsx'
+mills_xlsx = data_dir + 'ucsb/mills_20200129.xlsx'
 mills_df = pd.read_excel(mills_xlsx)
 
 # Remove whitespaces from data frame
@@ -41,7 +42,7 @@ pco_aka_csv = akas_dir + 'aka_pco_names.csv'
 pco_aka_df = pd.read_csv(pco_aka_csv,encoding="utf-8")
 pco_aka_df['parent'] = pco_aka_df['parent'].astype(str)
 
-# Merge aka's with updated mill_list
+# Merge aka's with updated master mill_list
 mill_names = mills_df[['mill_name','trase_code']]
 mill_aka_df = pd.concat([mill_aka_df,mill_names],ignore_index=False,sort=True)
 
@@ -49,7 +50,7 @@ pco_names = mills_df[['parent_co','trase_code']]
 pco_names = pco_names.rename(columns = {'parent_co':'parent'})
 pco_aka_df = pd.concat([pco_aka_df,pco_names],ignore_index=False,sort=True)
 
-## Read data from Valentin's List
+## Read data from external mill list
 gm_xlsx = data_dir + 'ibs/named_unref.xlsx'
 gm_df = pd.read_excel(gm_xlsx,encoding="utf-8")
 gm_df['mill_name'] = gm_df['matched_resolved_company_name'].astype(str)
@@ -60,9 +61,9 @@ gm_df['no'] = gm_df['firm_id'].astype(str)
 gm_df= gm_df.rename(columns = {'no':'mill_id'})
 gm_df= gm_df.rename(columns = {'parent_co':'parent'})
 
-######################################
-# Matching mills based on mill names #
-######################################
+###########################################
+# Create score matrix based on mill names #
+###########################################
 
 def get_matches(x):
     matches = process.extract(x['mill_name'], gm_df['mill_name'], scorer=fuzz.ratio,limit=len(gm_df.index))
@@ -73,10 +74,9 @@ mm_df = mill_aka_df.merge(mill_aka_df.sort_values('mill_name').progress_apply(ge
 # Groupby unique mill code to get highest score only
 mm_max_df = mm_df.groupby('trase_code').max().reset_index()
 
-
-##########################################
-# Matching mills based on parent company #
-##########################################
+###############################################
+# Create score matrix based on parent company #
+###############################################
 
 def get_matches(x):
     matches = process.extract(x['parent'], gm_df['parent'], scorer=fuzz.ratio,limit=len(gm_df.index))
@@ -87,9 +87,9 @@ mc_df = pco_aka_df.merge(pco_aka_df.sort_values('parent').progress_apply(get_mat
 # Groupby unique mill code to get highest score only
 mc_max_df = mc_df.groupby('trase_code').max().reset_index()
 
-################################################
-# Matching based on names
-#################################################
+################################
+# Matching based on mill names #
+################################
 
 # Match based on name
 def replace_score(row,score):
@@ -132,9 +132,9 @@ mbm_tr_df['name_matches'] = mbm_tr_df[mbm_tr_df.columns[1:]].apply(lambda x: ','
 mbm_tr_df = mbm_tr_df[['firm_id','name_matches']]
 mbm_tr_df = mbm_tr_df.assign(name_matches=np.core.defchararray.split(mbm_tr_df.name_matches.values.astype(str), ','))
 
-################################################
-# Matching based on mill company names
-#################################################
+########################################
+# Matching based on mill company names #
+########################################
 
 # Column names based on firm ids      
 cols = [col for col in is_num(mc_max_df.columns.values)]
@@ -158,6 +158,10 @@ mco_tr_df.rename(columns={'index':'firm_id'}, inplace=True)
 mco_tr_df['mco_matches'] = mco_tr_df[mco_tr_df.columns[1:]].apply(lambda x: ','.join(x.dropna().astype(str)),axis=1)
 mco_tr_df = mco_tr_df[['firm_id','mco_matches']]
 mco_tr_df = mco_tr_df.assign(mco_matches=np.core.defchararray.split(mco_tr_df.mco_matches.values.astype(str), ','))
+
+#######################################
+## Cleaning up and finalizing matches #
+#######################################
 
 # Join mill and distance match df's
 match_df = mbm_tr_df.merge(mco_tr_df, on='firm_id', how='inner', suffixes=('_1', '_2'))
