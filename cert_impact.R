@@ -79,36 +79,6 @@ df <- st_as_sf(x = df,
                crs = 4326)
 
 
-
-# test = df %>%
-#   filter(cert==1,
-#          year==2014) %>%
-#   select(uml_id, year, ln_ffb_price) %>% 
-#   drop_na()
-
-
-# balanced_df <- clean_df %>% 
-#   filter(!(year %in% c(2011, 2012))) %>% 
-#   pdata.frame(index = c("firm_id", "year")) %>% 
-#   make.pbalanced(balance.type = "shared.individuals")
-
-# # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-# # Pre-treatment outcomes ----- 
-# # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-# pt_df <- df %>% 
-#   filter(year<2008,
-#          year>2004) %>%
-#   group_by(firm_id) %>% 
-#   summarise(pt_ffb_price = mean(ln_ffb_price, na.rm = TRUE),
-#             pt_workers = mean(ln_workers, na.rm = TRUE),
-#             pt_revenue = mean(ln_rev, na.rm = TRUE),
-#             pt_cpo_price = mean(ln_cpo_price, na.rm = TRUE)) %>% 
-#   drop_na()
-# 
-# 
-# df <- df %>% 
-#   inner_join(pt_df, by = 'firm_id')
-
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Define main functions ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -210,10 +180,7 @@ run_did <- function(out_var, did_data, control = "notyettreated", save_plot = FA
   
   output <- list(agg_did = agg_did, 
                  summary = combined_plot)
-  # output <- list(tally_summary = tally_summary, 
-  #                wpval = Wpval, 
-  #                agg_did = agg_did, 
-  #                did_plot = did_plot)
+
   return(output)
   
 }
