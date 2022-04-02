@@ -8,9 +8,10 @@
 #
 #
 # TODO:
-# - Develop metric of profitability
+# - Develop metric of profitability / TFP
+# - Worker salaries?
 # - Look for heterogeneity based on local competition
-# - Add controls for conditional parallel trends. Possible variables: Group, Island/Province, Capacity. Currently failing unconditional parallel trends tests.
+# - Add controls for conditional parallel trends. Possible variables: Group, Island/Province, Capacity. Currently failing unconditional parallel trends tests for some variables
 #
 # Current interpretation:
 # - Certification increases input and output prices
@@ -29,6 +30,8 @@ library(bacondecomp)
 library(did)
 library(ggpubr)
 library(sf)
+library(viridis)
+library(patchwork)
 
 ihsTransform <- function(y) {log(y + (y ^ 2 + 1) ^ 0.5)}
 
@@ -44,6 +47,7 @@ file_content <- fromJSON(txt=file_name)$personal
 dropbox_dir <- file_content$path
 wdir <- paste0(dropbox_dir,"\\collaborations\\ucsb-kraus\\data\\")
 setwd(wdir)
+fig_dir <- paste0(dropbox_dir,"\\collaborations\\ucsb-kraus\\output\\figs\\")
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Load and clean data ----- 
@@ -67,7 +71,8 @@ df <- df %>%
          ln_cpo_vol = log(out_ton_cpo_imp1),
          ln_pko_vol = log(out_ton_pko_imp1),
          ln_ffb_vol = log(in_ton_ffb_imp1),
-         ln_oer = log(in_ton_ffb_imp1 / out_ton_cpo_imp1))
+         ln_oer = log(in_ton_ffb_imp1 / out_ton_cpo_imp1),
+         ln_cpo_export_shr = ihsTransform(prex_cpo_imp1))
 
 df <- st_as_sf(x = df,                         
                coords = c("lon", "lat"),
@@ -105,24 +110,32 @@ df <- st_as_sf(x = df,
 #   inner_join(pt_df, by = 'firm_id')
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-# Regressions ----- 
+# Define main functions ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-# Revenue impacts
-
 tally_obs <- function(did_df){
-  obs_tally <- did_df %>%
+  tally_df <- did_df %>% 
+    filter(cert_start>0) %>% 
+    mutate(years_to_cert = year - cert_start)
+  
+  obs_tally <- tally_df %>%
     as_tibble() %>% 
-    group_by(cert_start, year) %>% 
+    group_by(cert_start, years_to_cert) %>% 
     tally()
   
   tally_heatmap <- obs_tally %>%
     filter(cert_start != 0) %>%
-    ggplot(aes(x = year, y = cert_start, fill = n)) +
+    ggplot(aes(x = years_to_cert, y = cert_start, fill = n)) +
     geom_tile()
+  
+  tally_heatmap <- tally_heatmap +
+    labs(x = "Years from certification") +
+    theme_bw() +
+    geom_vline(xintercept = -0.5, linetype = "dashed", color = "grey", size = 1) +
+    scale_fill_viridis() 
   
   tally_table <- obs_tally <- obs_tally %>% 
     pivot_wider(id_cols = cert_start,
-                names_from = year,
+                names_from = years_to_cert,
                 values_from = n)
   tally_summary <- list(heatmap = tally_heatmap, 
                         table = tally_table)
@@ -137,12 +150,30 @@ plot_did <- function(out_var, did_results){
          x = "Years from certification",
          colour = "After\ncertification") +
     theme_bw() +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
+    scale_color_manual(values=c("#29AF7FFF", "#440154FF")) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1) +
+    geom_vline(xintercept = -0.5, linetype = "dashed", color = "grey", size = 1)
   return(did_plot)
 }
 
 
-run_did <- function(out_var, did_data, control = "notyettreated"){
+align_plots <- function(did_plot, tally_heatmap, agg_did){
+  xlims <- layer_scales(did_plot)$x$range$range
+  xlims[1] = xlims[1] - 1
+  xlims[2] = xlims[2] + 1
+  combined_plot <- (did_plot + xlim(xlims)) / (tally_heatmap + xlim(xlims))
+  combined_plot[[1]] = combined_plot[[1]] + theme(axis.text.x = element_blank(),
+                                                  axis.ticks.x = element_blank(),
+                                                  axis.title.x = element_blank() )
+  
+  combined_plot <- combined_plot +
+    plot_layout(heights = c(5, 2))
+  
+  return(combined_plot)
+}
+
+
+run_did <- function(out_var, did_data, control = "notyettreated", save_plot = FALSE){
   did_df <- did_data %>% 
     filter(!is.na(!!rlang::sym(out_var)))
   
@@ -155,485 +186,52 @@ run_did <- function(out_var, did_data, control = "notyettreated"){
                     xformla=~1,
                     data=did_df,
                     est_method="dr",
-                    print_details=TRUE,
+                    print_details=FALSE,
                     control_group = "notyettreated",
                     panel = FALSE
   )
   Wpval <- did_mod$Wpval
   agg_did <- aggte(did_mod, type = "dynamic", na.rm = TRUE)
+  att <- as.character(round(agg_did$overall.att, digits = 3))
+  att.se <- as.character(round(agg_did$overall.se, digits = 3))
+  
   did_plot <- plot_did(out_var, agg_did)
-  output <- list(tally_summary = tally_summary, 
-                 wpval = Wpval, 
-                 agg_did = agg_did, 
-                 did_plot = did_plot)
+  ymax <- layer_scales(did_plot)$y$range$range[2]
+  did_plot <- did_plot + 
+    annotate("text", x =0.1, y = (ymax - 0.1), label = paste0("Overall ATT: ", att, ";\nSE: ", att.se), hjust = 0)
+  
+  combined_plot <- align_plots(did_plot, tally_summary$heatmap, agg_did)
+  
+  if (save_plot==TRUE) {
+    ggsave(filename = paste0(fig_dir, out_var, ".svg"),
+           plot = combined_plot)
+  }
+  
+  
+  output <- list(agg_did = agg_did, 
+                 summary = combined_plot)
+  # output <- list(tally_summary = tally_summary, 
+  #                wpval = Wpval, 
+  #                agg_did = agg_did, 
+  #                did_plot = did_plot)
   return(output)
   
 }
 
 
-
-out_var <- "ln_rev"
-results <- run_did(out_var, df)
-
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)),
-         # year>2000,
-         # year<2016
-         )
-summary(did_df %>% select(out_var))
-
-
-# did_df <- did_df %>% 
-#   filter(!is.na(out_var),
-#          (cert_start>2009 & cert_start<2016) | cert_start==0)
-
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="dr",
-                  print_details=TRUE,
-                  # alp = 0.1
-                  control_group = "notyettreated",
-                  panel = FALSE
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_att <- aggte(qual_cs, type = "simple")
-summary(qual_att)
-
-qual_es <- aggte(qual_cs, type = "dynamic")
-qual_es <- aggte(qual_cs, type = "dynamic")
-summary(qual_es)
-ln_rev_plot <- ggdid(qual_es)
-ln_rev_plot +
-  labs(y = "Total revenue (log)", 
-       x = "Years from certification",
-       colour = "After\ncertification") +
-  theme_bw() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
-
-
-# # FFB value
-# out_var <- "ln_ffb_val"
-# did_df <- df %>% 
-#   filter(!is.na(!!rlang::sym(out_var)),
-#          year>2000 & year<2016)
-# summary(did_df %>% select(out_var))
-# 
-# obs_tally <- did_df %>%
-#   as_tibble() %>% 
-#   group_by(cert_start, year) %>% 
-#   tally()
-# 
-# # did_df <- did_df %>% 
-# #   filter(!is.na(out_var),
-# #          (cert_start>2009 & cert_start<2016) | cert_start==0)
-# 
-# 
-# qual_cs <- att_gt(yname=out_var,
-#                   gname="cert_start",
-#                   idname="firm_id",
-#                   tname="year",
-#                   xformla=~ln_ffb_vol,
-#                   data=did_df,
-#                   est_method="dr",
-#                   print_details=TRUE,
-#                   # alp = 0.1
-#                   control_group = "notyettreated"
-# )
-# summary(qual_cs)
-# ggdid(qual_cs)
-# 
-# qual_att <- aggte(qual_cs, type = "simple")
-# summary(qual_att)
-# 
-# qual_es <- aggte(qual_cs, type = "dynamic", balance_e = 4)
-# summary(qual_es)
-# ln_rev_plot <- ggdid(qual_es)
-# ln_rev_plot +
-#   labs(y = "Total revenue (log)", 
-#        x = "Years from certification",
-#        colour = "After\ncertification") +
-#   theme_bw() +
-#   geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
-
-
-
-
-# Output price impacts
-out_var <- "ln_cpo_price"
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)))
-
-obs_tally <- did_df %>%
-  group_by(cert_start, year) %>% 
-  tally()
-
-# did_df <- did_df %>% 
-#   filter(!is.na(out_var),
-#          (cert_start>2009 & cert_start<2016) | cert_start==0)
-
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="reg",
-                  print_details=TRUE,
-                  control_group = "notyettreated",
-                  panel = FALSE
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "dynamic",  balance_e = 3)
-qual_es <- aggte(qual_cs, type = "dynamic", na.rm = TRUE)
-
-summary(qual_es)
-cpo_price_plot <- ggdid(qual_es)
-cpo_price_plot +
-  labs(y = "CPO output price (log)", 
-       x = "Years from certification",
-       colour = "After\ncertification") +
-  theme_bw() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
-
-
-
-# Output volume impacts
-out_var <- "ln_cpo_vol"
-did_df <- df %>%
-  filter(!is.na(!!rlang::sym(out_var)),
-         year>2000 & year<2016
-         )
-
-obs_tally <- did_df %>%
-  group_by(cert_start, year) %>%
-  tally()
-
-did_df <- did_df %>%
-  filter(!is.na(out_var),
-         (cert_start>2009 & cert_start<2016) | cert_start==0)
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="reg",
-                  print_details=TRUE,
-                  control_group = "notyettreated"
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "dynamic", na.rm = TRUE)
-summary(qual_es)
-cpo_vol_plot <- ggdid(qual_es)
-cpo_vol_plot +
-  labs(y = "CPO output volume (log)",
-       x = "Years from certification",
-       colour = "After\ncertification") +
-  theme_bw() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
-
-
-# Input FFB price
-out_var <- "ln_ffb_price"
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)),
-         year>2000 & year<2020
-         )
-
-obs_tally <- did_df %>%
-  as_tibble() %>% 
-  group_by(cert_start, year) %>% 
-  tally()
-
-# did_df <- did_df %>% 
-#   filter(!is.na(out_var),
-#          (cert_start>2009 & cert_start<2016) | cert_start==0)
-
-# did_df <- did_df %>%
-#   filter(cert_start %in% list(2010, 2011, 0))
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="dr",
-                  print_details=TRUE,
-                  panel = FALSE,
-                  control_group = "notyettreated"
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "simple", na.rm = TRUE)
-summary(qual_es)
-
-qual_es <- aggte(qual_cs, type = "dynamic", na.rm = TRUE)
-summary(qual_es)
-ffb_price_plot <- ggdid(qual_es)
-ffb_price_plot +
-  labs(y = "FFB input price (log)", 
-       x = "Years from certification",
-       colour = "After\ncertification") +
-  theme_bw() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
-
-
-
-
-out_var <- "ln_ffb_vol"
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)),
-         year>2000 & year<2016
-         )
-
-obs_tally <- did_df %>%
-  group_by(cert_start, year) %>% 
-  tally()
-
-# did_df <- did_df %>% 
-#   filter(cert_start %in% list(2010, 2012, 2015, 0))
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="reg",
-                  print_details=TRUE,
-                  panel = FALSE,
-                  control_group = "notyettreated"
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "simple", na.rm = TRUE)
-summary(qual_es)
-
-qual_es <- aggte(qual_cs, type = "dynamic", na.rm = TRUE)
-summary(qual_es)
-ggdid(qual_es)
-
-
-
-
-out_var <- "ln_pko_price"
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)),
-         year>2006 & year<2016)
-
-obs_tally <- did_df %>%
-  group_by(cert_start, year) %>% 
-  tally()
-
-# did_df <- did_df %>% 
-#   filter(cert_start %in% list(2010, 2011, 2012, 2013, 2014, 2015, 0))
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="reg",
-                  print_details=TRUE,
-                  control_group = "notyettreated",
-                  panel = FALSE
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "simple")
-summary(qual_es)
-
-qual_es <- aggte(qual_cs, type = "dynamic")
-summary(qual_es)
-ggdid(qual_es)
-
-
-
-out_var <- "ln_pko_vol"
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)),
-         year>2006 & year<2016)
-
-obs_tally <- did_df %>%
-  group_by(cert_start, year) %>% 
-  tally()
-
-# did_df <- did_df %>% 
-#   filter(cert_start %in% list(2010, 2011, 2012, 2013, 2014, 2015, 0))
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="reg",
-                  print_details=TRUE,
-                  control_group = "notyettreated",
-                  panel = FALSE
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "simple")
-summary(qual_es)
-
-qual_es <- aggte(qual_cs, type = "dynamic")
-summary(qual_es)
-ggdid(qual_es)
-
-
-
-
-
-
-# Number of workers
-out_var <- "ln_workers"
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)),
-         year>2000 & year<2016)
-
-obs_tally <- did_df %>%
-  as_tibble() %>% 
-  group_by(cert_start, year) %>% 
-  tally()
-
-# did_df <- did_df %>% 
-#   filter(cert_start %in% list(2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 0))
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="reg",
-                  print_details=TRUE,
-                  panel = FALSE,
-                  control_group = "notyettreated"
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "simple", balance_e = 4)
-summary(qual_es)
-
-qual_es <- aggte(qual_cs, type = "dynamic")
-summary(qual_es)
-ffb_price_plot <- ggdid(qual_es)
-ffb_price_plot +
-  labs(y = "Number of workers (log)", 
-       x = "Years from certification",
-       colour = "After\ncertification") +
-  theme_bw() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
-
-
-
-# Export share (pko slight uptick, cpo no impact)
-out_var <- "prex_pko_imp1"
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)),
-         year>2000 & year<2016)
-
-obs_tally <- did_df %>%
-  group_by(cert_start, year) %>% 
-  tally()
-
-# did_df <- did_df %>% 
-#   filter(cert_start %in% list(2009, 2010, 2011, 2012, 2013, 2014, 0))
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="reg",
-                  print_details=TRUE,
-                  panel = FALSE,
-                  control_group = "notyettreated"
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "simple", balance_e = 3)
-summary(qual_es)
-
-qual_es <- aggte(qual_cs, type = "dynamic")
-summary(qual_es)
-ffb_price_plot <- ggdid(qual_es)
-ffb_price_plot +
-  labs(y = "Export share", 
-       x = "Years from certification",
-       colour = "After\ncertification") +
-  theme_bw() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
-
-
-
-
-
-# OER
-out_var <- "ln_oer"
-did_df <- df %>% 
-  filter(!is.na(!!rlang::sym(out_var)),
-         year>2000 & year<2016)
-
-obs_tally <- did_df %>%
-  group_by(cert_start, year) %>% 
-  tally()
-
-# did_df <- did_df %>% 
-#   filter(cert_start %in% list(2010, 2015, 0))
-
-qual_cs <- att_gt(yname=out_var,
-                  gname="cert_start",
-                  idname="firm_id",
-                  tname="year",
-                  xformla=~1,
-                  data=did_df,
-                  est_method="reg",
-                  print_details=TRUE,
-                  panel = FALSE,
-                  control_group = "notyettreated"
-)
-summary(qual_cs)
-ggdid(qual_cs)
-
-qual_es <- aggte(qual_cs, type = "simple", balance.e = 3)
-summary(qual_es)
-
-qual_es <- aggte(qual_cs, type = "dynamic")
-summary(qual_es)
-ffb_price_plot <- ggdid(qual_es)
-ffb_price_plot +
-  labs(y = "Number of workers (log)", 
-       x = "Years from certification",
-       colour = "After\ncertification") +
-  theme_bw() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey", size = 1)
-
-
-
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-# Plots ----- 
+# Run DID analyses ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
+mod_df <- df %>% filter(year>=2000)
+
+var_list <- list("ln_rev",
+                 "ln_ffb_price",
+                 "ln_cpo_price",
+                 "ln_pko_price",
+                 "ln_workers",
+                 "ln_cpo_export_shr")
+
+for (out_var in var_list) {
+  run_did(out_var, mod_df, save_plot = TRUE)
+}
+
