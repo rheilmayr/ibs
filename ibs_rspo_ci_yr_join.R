@@ -25,8 +25,8 @@ if (length(file_name)==0){
 
 file_content <- fromJSON(txt=file_name)$personal
 dropbox_dir <- file_content$path
-ibs_dir <- paste0(dropbox_dir,"\\kraus\\data\\ibs\\")
-rspo_dir <- paste0(dropbox_dir,"\\Trase\\Indonesia\\mill_lists\\")
+ibs_dir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\ucsb-kraus\\data\\ibs\\")
+rspo_dir <- paste0(dropbox_dir,"\\collaborations\\trase\\Trase\\Indonesia\\palm\\mill_lists\\")
 
 
 # read and clean data ----------------------------------------------------
@@ -42,7 +42,7 @@ cert_mills <- rspo_mills %>%
 
 # read ibs matched mills 
 
-ibs_mills <- read_excel(paste0(ibs_dir,"IBS_UML_panel.xlsx"))
+ibs_mills <- read_excel(paste0(ibs_dir,"IBS_UML_panel_final.xlsx"))
 
 # merge ibs mills with rspo CI year
 ibs_rspo_merge <- ibs_mills %>%
@@ -65,5 +65,5 @@ ibs_rspo_merge %>%
 
 # export data ------------------------------------------------------------
 
-write.csv(ibs_rspo_merge,file=paste0(ibs_dir,"ibs_matched_rspo_ci_year_feb2020.csv"))  
+write.csv(ibs_rspo_merge,file=paste0(ibs_dir,"ibs_matched_rspo_ci_year.csv"))  
 
