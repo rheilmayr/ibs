@@ -32,6 +32,7 @@ library(ggpubr)
 library(sf)
 library(viridis)
 library(patchwork)
+library(prodest)
 
 ihsTransform <- function(y) {log(y + (y ^ 2 + 1) ^ 0.5)}
 
@@ -45,16 +46,16 @@ if (length(file_name)==0){
 
 file_content <- fromJSON(txt=file_name)$personal
 dropbox_dir <- file_content$path
-wdir <- paste0(dropbox_dir,"\\collaborations\\ucsb-kraus\\data\\")
+wdir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\ucsb-kraus\\data\\")
 setwd(wdir)
-fig_dir <- paste0(dropbox_dir,"\\collaborations\\ucsb-kraus\\output\\figs\\")
+fig_dir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\ucsb-kraus\\output\\figs\\")
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Load and clean data ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-df <- read.csv(paste0(wdir, "ucsb\\ibs_matched_rspo_ci_year_feb2020.csv"))
+df <- read.csv(paste0(wdir, "ibs\\ibs_matched_rspo_ci_year.csv"))
 df <- df %>% 
-  as_tibble() %>%
+  as_tibble()  %>%
   select(-X) %>%
   filter(!is.na(uml_id))
 
@@ -66,13 +67,17 @@ df <- df %>%
          ln_ffb_val = log(in_val_ffb),
          ln_cpo_price = log(cpo_price_imp1),
          ln_pko_price = log(pko_price_imp1),
-         ln_rev = log(revenue_total),
-         ln_workers = log(workers_total_imp3),
          ln_cpo_vol = log(out_ton_cpo_imp1),
          ln_pko_vol = log(out_ton_pko_imp1),
          ln_ffb_vol = log(in_ton_ffb_imp1),
+         ln_rev = log(revenue_total_imp2),
+         ln_workers = log(workers_total_imp2),
          ln_oer = log(in_ton_ffb_imp1 / out_ton_cpo_imp1),
-         ln_cpo_export_shr = ihsTransform(prex_cpo_imp1))
+         ln_cpo_export_shr = ihsTransform(prex_cpo_imp1),
+         ln_wage = ihsTransform(wage_prod_imp2),
+         ln_value_added = log(value_added_self_imp2),
+         ln_materials = log(materials_tot_imp2),
+         ln_fc = log(fc_add_imp))
 
 df <- st_as_sf(x = df,                         
                coords = c("lon", "lat"),
@@ -196,9 +201,44 @@ var_list <- list("ln_rev",
                  "ln_cpo_price",
                  "ln_pko_price",
                  "ln_workers",
-                 "ln_cpo_export_shr")
+                 "ln_cpo_export_shr",
+                 "ln_wage")
 
 for (out_var in var_list) {
   run_did(out_var, mod_df, save_plot = TRUE)
 }
 
+
+mod_df <- df %>% filter(year>=2000)
+run_did("ln_wage", mod_df, save_plot = FALSE)
+
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Output to stata ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+library(haven)
+library(foreign)
+
+prod_df <- df %>% 
+  select(firm_id, year, cert_start, ln_value_added, ln_workers, ln_fc, fc_add_imp, ln_materials) %>% 
+  drop_na() %>% 
+  as.data.frame() %>% 
+  select(-geometry)
+write_dta(prod_df, paste0(wdir, "ibs/ucsb_ibs.dta"))
+prod_df <- read_dta(paste0(wdir, "ibs/ucsb_ibs_tfp.dta"))
+
+run_did("tfp", prod_df, save_plot = TRUE)
+run_did("mkup", prod_df, save_plot = TRUE)
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Productivity estimation ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+y = prod_df$ln_value_added
+fX = prod_df$ln_workers
+sX = prod_df$ln_fc
+pX = prod_df$ln_materials
+idvar = prod_df$firm_id
+timevar = prod_df$year
+prod_mod <- prodestWRDG(Y = y, fX = fX, sX = sX, pX = pX, idvar = idvar, timevar = timevar )
+summary(prod_mod)
