@@ -33,6 +33,10 @@ library(sf)
 library(viridis)
 library(patchwork)
 library(prodest)
+library(readxl)
+library(sf)
+library(units)
+
 
 ihsTransform <- function(y) {log(y + (y ^ 2 + 1) ^ 0.5)}
 
@@ -49,6 +53,23 @@ dropbox_dir <- file_content$path
 wdir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\ucsb-kraus\\data\\")
 setwd(wdir)
 fig_dir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\ucsb-kraus\\output\\figs\\")
+
+## Full trase mill list
+trase_dir <- paste0(dropbox_dir, "\\collaborations\\trase\\Trase\\Indonesia\\palm\\mill_lists\\tracker\\")
+mill_est <- read_xlsx(paste0(trase_dir, "mill_yr_tracker.xlsx"))
+mill_est <- mill_est %>% 
+  select(trase_code, earliest_yr_exist, latitude, longitude)
+mill_cap <- read_xlsx(paste0(trase_dir, "mill_caps_tracker.xlsx"))
+mill_cap <- mill_cap %>% 
+  rowwise() %>%
+  mutate(max_cap=max(c_across(starts_with("cap_2")), na.rm = TRUE)) %>% 
+  filter(is.finite(max_cap)) %>% 
+  select(trase_code, max_cap)
+all_mills <- mill_est %>% 
+  left_join(mill_cap, by = "trase_code") %>% 
+  st_as_sf(coords = c("longitude", "latitude"),
+           crs = 4326)
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Load and clean data ----- 
@@ -82,6 +103,55 @@ df <- df %>%
 df <- st_as_sf(x = df,                         
                coords = c("lon", "lat"),
                crs = 4326)
+
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Start to differentiate market competitiveness ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+base_year = 2010
+dist_threshold <- 40
+current_mills <- all_mills %>% 
+  filter(earliest_yr_exist <= base_year) %>% 
+  group_by(trase_code) %>% 
+  summarise(capacity = first(max_cap))
+  
+mill_dist <- st_distance(current_mills)
+rownames(mill_dist) <- current_mills$trase_code
+colnames(mill_dist) <- current_mills$trase_code
+mill_dist <- as_tibble(mill_dist) %>% 
+  drop_units()
+mill_dist <- mill_dist / 1000
+
+mill_dist <- mill_dist %>%
+  mutate(trase_code = names(mill_dist)) %>% 
+  mutate(across(.cols = !trase_code, ~(.x < dist_threshold)))
+
+neighbor_list <- c()
+for (mill in current_mills %>% pull(trase_code)){
+  neighbors <- mill_dist %>% 
+    filter(get(mill) == TRUE) %>% 
+    pull(trase_code)
+  neighbor_list[mill] <- list(neighbors)
+}
+
+summarize_neighbors <- function(trase_code) {
+  neighbors <- neighbor_list[trase_code]
+  n_neighbors <- length(neighbors[[1]]) - 1
+  cap_neighbors <- current_mills %>% 
+    filter(trase_code %in% neighbors[[1]]) %>% 
+    pull(capacity) %>% 
+    sum()
+  sum_neighbors <- data.frame("n_neighbors" = n_neighbors, "cap_neighbors" = cap_neighbors)
+  return(sum_neighbors)
+}
+
+current_mills <- current_mills %>% 
+  mutate(sum_neighbors = map(trase_code, summarize_neighbors)) %>% 
+  unnest(sum_neighbors) %>% 
+  mutate(cap_neighbors = cap_neighbors - capacity)
+
+current_mills <- current_mills %>% 
+  mutate(compet_ntile = ntile(n_neighbors, 2))
 
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
