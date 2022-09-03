@@ -32,6 +32,11 @@ library(ggpubr)
 library(sf)
 library(viridis)
 library(patchwork)
+library(prodest)
+library(readxl)
+library(sf)
+library(units)
+library(haven)
 
 ihsTransform <- function(y) {log(y + (y ^ 2 + 1) ^ 0.5)}
 
@@ -45,38 +50,94 @@ if (length(file_name)==0){
 
 file_content <- fromJSON(txt=file_name)$personal
 dropbox_dir <- file_content$path
-wdir <- paste0(dropbox_dir,"\\collaborations\\ucsb-kraus\\data\\")
+wdir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\data\\")
 setwd(wdir)
-fig_dir <- paste0(dropbox_dir,"\\collaborations\\ucsb-kraus\\output\\figs\\")
+fig_dir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\output\\figs\\")
+
+## Full trase mill list
+trase_dir <- paste0(dropbox_dir, "\\collaborations\\trase\\Trase\\Indonesia\\palm\\mill_lists\\tracker\\")
+mill_est <- read_xlsx(paste0(trase_dir, "mill_yr_tracker.xlsx"))
+mill_est <- mill_est %>% 
+  select(trase_code, earliest_yr_exist, latitude, longitude)
+mill_cap <- read_xlsx(paste0(trase_dir, "mill_caps_tracker.xlsx"))
+mill_cap <- mill_cap %>% 
+  rowwise() %>%
+  mutate(max_cap=max(c_across(starts_with("cap_2")), na.rm = TRUE)) %>% 
+  filter(is.finite(max_cap)) %>% 
+  select(trase_code, max_cap)
+all_mills <- mill_est %>% 
+  left_join(mill_cap, by = "trase_code") %>% 
+  st_as_sf(coords = c("longitude", "latitude"),
+           crs = 4326)
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Load and clean data ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-df <- read.csv(paste0(wdir, "ucsb\\ibs_matched_rspo_ci_year_feb2020.csv"))
+df <- read.csv(paste0(wdir, "ibs\\ibs_matched_rspo_ci_year.csv"))
+stata_df <- read_dta(paste0(wdir, "ibs\\ucsb_ibs_tfp.dta")) %>% 
+  select(firm_id, year, tfp, mkup)
 df <- df %>% 
-  as_tibble() %>%
-  select(-X) %>%
-  filter(!is.na(uml_id))
+  left_join(stata_df, by = c("firm_id", "year"))
 
-df <- df %>%
-  mutate(cert = year>=ci_year,
-         cert = replace_na(cert, 0),
-         cert_start = replace_na(ci_year, 0),
-         ln_ffb_price = log(ffb_price_imp1),
-         ln_ffb_val = log(in_val_ffb),
-         ln_cpo_price = log(cpo_price_imp1),
-         ln_pko_price = log(pko_price_imp1),
-         ln_rev = log(revenue_total),
-         ln_workers = log(workers_total_imp3),
-         ln_cpo_vol = log(out_ton_cpo_imp1),
-         ln_pko_vol = log(out_ton_pko_imp1),
-         ln_ffb_vol = log(in_ton_ffb_imp1),
-         ln_oer = log(in_ton_ffb_imp1 / out_ton_cpo_imp1),
-         ln_cpo_export_shr = ihsTransform(prex_cpo_imp1))
+
+df <- df %>% 
+  as_tibble()  %>%
+  select(-X) %>% 
+  filter(!is.na(uml_id))
 
 df <- st_as_sf(x = df,                         
                coords = c("lon", "lat"),
                crs = 4326)
+
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Start to differentiate market competitiveness ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+base_year = 2010
+dist_threshold <- 40
+current_mills <- all_mills %>% 
+  filter(earliest_yr_exist <= base_year) %>% 
+  group_by(trase_code) %>% 
+  summarise(capacity = first(max_cap))
+  
+mill_dist <- st_distance(current_mills)
+rownames(mill_dist) <- current_mills$trase_code
+colnames(mill_dist) <- current_mills$trase_code
+mill_dist <- as_tibble(mill_dist) %>% 
+  drop_units()
+mill_dist <- mill_dist / 1000
+
+mill_dist <- mill_dist %>%
+  mutate(trase_code = names(mill_dist)) %>% 
+  mutate(across(.cols = !trase_code, ~(.x < dist_threshold)))
+
+neighbor_list <- c()
+for (mill in current_mills %>% pull(trase_code)){
+  neighbors <- mill_dist %>% 
+    filter(get(mill) == TRUE) %>% 
+    pull(trase_code)
+  neighbor_list[mill] <- list(neighbors)
+}
+
+summarize_neighbors <- function(trase_code) {
+  neighbors <- neighbor_list[trase_code]
+  n_neighbors <- length(neighbors[[1]]) - 1
+  cap_neighbors <- current_mills %>% 
+    filter(trase_code %in% neighbors[[1]]) %>% 
+    pull(capacity) %>% 
+    sum()
+  sum_neighbors <- data.frame("n_neighbors" = n_neighbors, "cap_neighbors" = cap_neighbors)
+  return(sum_neighbors)
+}
+
+current_mills <- current_mills %>% 
+  mutate(sum_neighbors = map(trase_code, summarize_neighbors)) %>% 
+  unnest(sum_neighbors) %>% 
+  mutate(cap_neighbors = cap_neighbors - capacity)
+
+current_mills <- current_mills %>% 
+  mutate(compet_ntile = ntile(n_neighbors, 2))
 
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -189,16 +250,59 @@ run_did <- function(out_var, did_data, control = "notyettreated", save_plot = FA
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Run DID analyses ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-mod_df <- df %>% filter(year>=2000)
+df <- df %>% 
+  left_join(current_mills %>% as_tibble(),
+            by = "trase_code")
+            
+mod_df <- df %>% 
+  filter(year>=2000)
 
 var_list <- list("ln_rev",
                  "ln_ffb_price",
                  "ln_cpo_price",
                  "ln_pko_price",
                  "ln_workers",
-                 "ln_cpo_export_shr")
+                 "ln_cpo_export_shr",
+                 "ln_wage")
 
 for (out_var in var_list) {
   run_did(out_var, mod_df, save_plot = TRUE)
 }
 
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Heterogeneity by local competition among mills ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Markets with few competing mills
+mod_df <- df %>% 
+  filter(year>=2000,
+         compet_ntile == 1)
+
+run_did("ln_ffb_price", mod_df, save_plot = FALSE)
+
+
+# Markets with lots of competing mills
+mod_df <- df %>% 
+  filter(year>=2000,
+         compet_ntile == 2)
+
+run_did("ln_ffb_price", mod_df, save_plot = FALSE)
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Output to stata ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+run_did("tfp", df, save_plot = TRUE)
+run_did("mkup", df, save_plot = TRUE)
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Productivity estimation ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+y = prod_df$ln_value_added
+fX = prod_df$ln_workers
+sX = prod_df$ln_fc
+pX = prod_df$ln_materials
+idvar = prod_df$firm_id
+timevar = prod_df$year
+prod_mod <- prodestWRDG(Y = y, fX = fX, sX = sX, pX = pX, idvar = idvar, timevar = timevar )
+summary(prod_mod)
