@@ -8,9 +8,9 @@
 #
 #
 # TODO:
-# - Develop metric of profitability / TFP
-# - Worker salaries?
-# - Look for heterogeneity based on local competition
+# - Dig into markup calculations
+# - Further explore heterogeneity based on local competition
+# - Make better use of pre-treatment trends tests
 # - Add controls for conditional parallel trends. Possible variables: Group, Island/Province, Capacity. Currently failing unconditional parallel trends tests for some variables
 #
 # Current interpretation:
@@ -23,6 +23,7 @@
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Imports ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
+library(fixest)
 library(tidyverse)
 library(jsonlite)
 library(plm)
@@ -37,6 +38,9 @@ library(readxl)
 library(sf)
 library(units)
 library(haven)
+library(tidylog)
+library(naniar)
+library(fixest)
 
 ihsTransform <- function(y) {log(y + (y ^ 2 + 1) ^ 0.5)}
 
@@ -81,6 +85,12 @@ df <- df %>%
   left_join(stata_df, by = c("firm_id", "year"))
 
 
+cpo_belawan_prices <- df %>% 
+  group_by(year) %>%
+  summarise(cpo_fob_price = mean(fob_blwn_cpo_y, na.rm = TRUE),
+            cpo_dom_price = mean(dom_blwn_cpo_y, na.rm = TRUE))
+
+
 df <- df %>% 
   as_tibble()  %>%
   select(-X) %>% 
@@ -89,6 +99,18 @@ df <- df %>%
 df <- st_as_sf(x = df,                         
                coords = c("lon", "lat"),
                crs = 4326)
+
+
+df <- df %>%
+  mutate(ln_tfp = log(tfp),
+         ln_mkup = log(mkup),
+         ln_va_share = log(exp(ln_value_added) / exp(ln_rev)),
+         price_ratio = exp(ln_ffb_price) / exp(ln_cpo_price),
+         ln_price_ratio = log(price_ratio),
+         ln_va = log(value_added_self_imp2)) %>% 
+  left_join(cpo_belawan_prices, by = "year") %>% 
+  mutate(cpo_premium = cpo_price_imp2 / cpo_dom_price,
+         ln_cpo_premium = log(cpo_premium))
 
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -134,10 +156,8 @@ summarize_neighbors <- function(trase_code) {
 current_mills <- current_mills %>% 
   mutate(sum_neighbors = map(trase_code, summarize_neighbors)) %>% 
   unnest(sum_neighbors) %>% 
-  mutate(cap_neighbors = cap_neighbors - capacity)
-
-current_mills <- current_mills %>% 
-  mutate(compet_ntile = ntile(n_neighbors, 2))
+  mutate(mkt_power = capacity / cap_neighbors,
+         cap_neighbors = cap_neighbors - capacity)
 
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -187,20 +207,54 @@ plot_did <- function(out_var, did_results){
   return(did_plot)
 }
 
+plot_trends <- function(out_var, did_data){
+  trend_data <- did_data %>% 
+    mutate(ever_certified = cert_start > 0) %>% 
+    group_by(ever_certified, year) %>% 
+    summarize(!!out_var := mean(.data[[out_var]], na.rm = TRUE)) 
+  
+  trend_plot <- trend_data %>%
+    ggplot(aes_string(x = "year", y = out_var, group = "ever_certified", color = "ever_certified")) +
+    geom_line() +
+    theme_bw() +
+    scale_color_manual(values=c("#29AF7FFF", "#440154FF")) +
+    labs(title = "Raw trend in outcome",
+         y = out_var,
+         x = "Year",
+         colour = 'Ever\ncertified')
+  return(trend_plot)
+}
 
-align_plots <- function(did_plot, tally_heatmap, agg_did){
+
+align_plots <- function(trend_plot, did_plot, tally_heatmap, agg_did){
   xlims <- layer_scales(did_plot)$x$range$range
   xlims[1] = xlims[1] - 1
   xlims[2] = xlims[2] + 1
-  combined_plot <- (did_plot + xlim(xlims)) / (tally_heatmap + xlim(xlims))
-  combined_plot[[1]] = combined_plot[[1]] + theme(axis.text.x = element_blank(),
+  combined_plot <- trend_plot / (did_plot + xlim(xlims)) / (tally_heatmap + xlim(xlims))
+  combined_plot[[2]] = combined_plot[[2]] + theme(axis.text.x = element_blank(),
                                                   axis.ticks.x = element_blank(),
                                                   axis.title.x = element_blank() )
   
   combined_plot <- combined_plot +
-    plot_layout(heights = c(5, 2))
+    plot_layout(heights = c(5, 5, 2))
   
   return(combined_plot)
+}
+
+
+pretest_did <- function(out_var, did_df, control = "notyettreated"){
+  pretest <- conditional_did_pretest(yname=out_var,
+                                     gname="cert_start",
+                                     idname="firm_id",
+                                     tname="year",
+                                     xformla= ~1,
+                                     data=did_df,
+                                     est_method="dr",
+                                     print_details=FALSE,
+                                     control_group = control,
+                                     allow_unbalanced_panel = TRUE,
+                                     panel = TRUE)
+  return(pretest)
 }
 
 
@@ -214,12 +268,16 @@ run_did <- function(out_var, did_data, control = "notyettreated", save_plot = FA
                     gname="cert_start",
                     idname="firm_id",
                     tname="year",
-                    xformla=~1,
+                    # xformla= ~1 + ln_rev,
+                    xformla= ~1,
                     data=did_df,
                     est_method="dr",
                     print_details=FALSE,
-                    control_group = "notyettreated",
-                    panel = FALSE
+                    control_group = control,
+                    allow_unbalanced_panel = TRUE,
+                    panel = TRUE,
+                    # base_period = "universal",
+                    # anticipation = 3
   )
   Wpval <- did_mod$Wpval
   agg_did <- aggte(did_mod, type = "dynamic", na.rm = TRUE)
@@ -231,7 +289,9 @@ run_did <- function(out_var, did_data, control = "notyettreated", save_plot = FA
   did_plot <- did_plot + 
     annotate("text", x =0.1, y = (ymax - 0.1), label = paste0("Overall ATT: ", att, ";\nSE: ", att.se), hjust = 0)
   
-  combined_plot <- align_plots(did_plot, tally_summary$heatmap, agg_did)
+  trend_plot <- plot_trends(out_var, did_data)
+  
+  combined_plot <- align_plots(trend_plot, did_plot, tally_summary$heatmap, agg_did)
   
   if (save_plot==TRUE) {
     ggsave(filename = paste0(fig_dir, out_var, ".svg"),
@@ -246,23 +306,32 @@ run_did <- function(out_var, did_data, control = "notyettreated", save_plot = FA
   
 }
 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Explore missing data ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%
+df %>% 
+  select(firm_id, year, cert_start, ln_rev, ln_ffb_price, ln_cpo_price, ln_workers, 
+         ln_wage, ln_price_ratio, ln_tfp, ln_mkup, sh_share, out_ton_cpo_imp1, ln_va, ffb_price_imp1) %>% 
+  miss_var_summary()
+
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Run DID analyses ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-df <- df %>% 
+df <- df %>%
+  st_drop_geometry() %>% 
   left_join(current_mills %>% as_tibble(),
-            by = "trase_code")
+            by = "trase_code") %>% 
+  as_tibble()
             
 mod_df <- df %>% 
   filter(year>=2000)
 
-var_list <- list("ln_rev",
+var_list <- list("ln_va",
+                 "ln_rev",
                  "ln_ffb_price",
-                 "ln_cpo_price",
-                 "ln_pko_price",
-                 "ln_workers",
-                 "ln_cpo_export_shr",
+                 "ln_cpo_premium",
                  "ln_wage")
 
 for (out_var in var_list) {
@@ -270,39 +339,60 @@ for (out_var in var_list) {
 }
 
 
+# Contrasting two possible designs
+run_did("ln_wage", mod_df, control = "notyettreated", save_plot = FALSE)
+run_did("ln_wage", mod_df %>% filter(cert_start!=0), control = "notyettreated", save_plot = FALSE)
+
+
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Heterogeneity by local competition among mills ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-# Markets with few competing mills
-mod_df <- df %>% 
+mkt_power_stable <- df %>% 
+  group_by(trase_code) %>% 
+  summarise(cap = mean(capacity),
+            ncap = mean(cap_neighbors)) %>% 
+  mutate(mkt_power_stable = cap / (cap + ncap)) %>% 
+  select(trase_code, mkt_power_stable)
+
+comp_df <- df %>%
+  left_join(mkt_power_stable, by = "trase_code") %>% 
+  mutate(compet_ntile = ntile(mkt_power_stable, 2)) 
+
+mod_df <- comp_df %>% 
   filter(year>=2000,
          compet_ntile == 1)
+
 
 run_did("ln_ffb_price", mod_df, save_plot = FALSE)
 
 
 # Markets with lots of competing mills
-mod_df <- df %>% 
+mod_df <- comp_df %>% 
   filter(year>=2000,
          compet_ntile == 2)
 
 run_did("ln_ffb_price", mod_df, save_plot = FALSE)
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%
-# Output to stata ----- 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%
-run_did("tfp", df, save_plot = TRUE)
-run_did("mkup", df, save_plot = TRUE)
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%
-# Productivity estimation ----- 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-y = prod_df$ln_value_added
-fX = prod_df$ln_workers
-sX = prod_df$ln_fc
-pX = prod_df$ln_materials
-idvar = prod_df$firm_id
-timevar = prod_df$year
-prod_mod <- prodestWRDG(Y = y, fX = fX, sX = sX, pX = pX, idvar = idvar, timevar = timevar )
-summary(prod_mod)
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Heterogeneity by smallholder share ----- 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+mean_sm_shr <- mod_df$sh_share %>% mean(na.rm = TRUE)
+run_did("ln_ffb_price", mod_df %>% filter(sh_share < mean_sm_shr), control = "nevertreated", save_plot = FALSE)
+run_did("ln_ffb_price", mod_df %>% filter(sh_share > mean_sm_shr), control = "nevertreated", save_plot = FALSE)
+
+
+
+# # %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# # Productivity estimation ----- 
+# # %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# 
+# y = prod_df$ln_value_added
+# fX = prod_df$ln_workers
+# sX = prod_df$ln_fc
+# pX = prod_df$ln_materials
+# idvar = prod_df$firm_id
+# timevar = prod_df$year
+# prod_mod <- prodestWRDG(Y = y, fX = fX, sX = sX, pX = pX, idvar = idvar, timevar = timevar )
+# summary(prod_mod)
