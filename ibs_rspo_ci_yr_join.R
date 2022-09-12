@@ -14,6 +14,7 @@ library(openxlsx)
 library(haven)
 library(foreign)
 library(janitor)
+library(tidylog)
 
 ihsTransform <- function(y) {log(y + (y ^ 2 + 1) ^ 0.5)}
 
@@ -38,6 +39,10 @@ rspo_dir <- paste0(dropbox_dir,"\\collaborations\\trase\\Trase\\Indonesia\\palm\
 # read and clean data ----------------------------------------------------
 
 rspo_mills <- read_xlsx(paste0(rspo_dir,"rspoCert.xlsx"))
+
+# read smallholder shares
+small_shr <- read_csv(paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\data\\ucsb\\mill_smallholder_share.csv")) %>% 
+  rename(trase_code = mill_id)
 
 # reformat data 
 
@@ -78,13 +83,22 @@ ibs_rspo_merge <- ibs_rspo_merge %>%
   rename(workers_total_imp2 = workers_total_imp2...112)
 
 
+# merge smallholder data
+ibs_rspo_merge <- ibs_rspo_merge %>% 
+  left_join(small_shr, by = "trase_code")
+
+
+# drop data without known certification status
+ibs_rspo_merge <- ibs_rspo_merge %>% 
+  filter(!is.na(trase_code))
+
 # Creating cleaned variables ---------------------------------------------------------
 ibs_rspo_merge <- ibs_rspo_merge %>%
   mutate(cert = year>=ci_year,
          cert = replace_na(cert, 0),
          cert_start = replace_na(ci_year, 0),
          ln_ffb_price = log(ffb_price_imp1),
-         ln_ffb_val = log(in_val_ffb),
+         ln_ffb_val = log(in_val_ffb_imp1),
          ln_cpo_price = log(cpo_price_imp1),
          ln_pko_price = log(pko_price_imp1),
          ln_cpo_vol = log(out_ton_cpo_imp1),
@@ -97,8 +111,10 @@ ibs_rspo_merge <- ibs_rspo_merge %>%
          ln_wage = ihsTransform(wage_prod_imp2),
          ln_value_added = log(value_added_self_imp2),
          ln_materials = log(materials_tot_imp2),
+         ln_electricity = log(elec_qty_imp2),
          ln_fc_add = log(fc_add_imp),
-         ln_fc_est_tot = fc_est_tot_imp6co) # Aug 2022 - Valentin and Sebastian confirm that this is the correct fixed capital variable
+         ln_fc_est_tot = log(fc_est_tot_imp6co),
+         ln_labor_cost = log(workers_prod_imp2 * wage_prod_imp2)) # Aug 2022 - Valentin and Sebastian confirm that this is the correct fixed capital variable
 
 
 ibs_rspo_merge
@@ -109,7 +125,8 @@ write.csv(ibs_rspo_merge,file=paste0(ibs_dir,"ibs_matched_rspo_ci_year.csv"))
 
 # export stata data ------------------------------------------------------------
 prod_df <- ibs_rspo_merge %>% 
-  select(firm_id, year, ln_value_added, ln_workers, ln_fc_est_tot, ln_fc_add, ln_materials) %>% 
+  select(firm_id, year, ln_value_added, ln_workers, ln_fc_est_tot, ln_fc_add, ln_materials, 
+         ln_ffb_price, ln_ffb_vol, ln_ffb_val, ln_electricity, ln_labor_cost) %>% 
   drop_na()
 write_dta(prod_df, paste0(ibs_dir, "ucsb_ibs.dta"), version = 14)
 
