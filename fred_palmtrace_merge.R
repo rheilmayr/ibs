@@ -1,6 +1,6 @@
 ## ---------------------------------------------------------
 ##
-## Purpose of script: 
+## Purpose of script: Combine palm oil prices data from RSPO Palmtrace and FRED
 ##
 ## Author: Jason Benedict
 ##
@@ -8,7 +8,8 @@
 ## 
 ## ---------------------------------------------------------
 ##
-## Notes: 
+## Notes: Palmtrace data scraped from : https://rspo.org/palmtrace
+##        FRED data from : https://fred.stlouisfed.org/series/PPOILUSDM
 ##   
 ##
 ## ---------------------------------------------------------
@@ -56,7 +57,11 @@ fred_cpo <- read_csv(paste0("PPOILUSDM.csv"))
 
 ## clean and merge data -----------------------
 
-palmtrace_df <- palmtrace %>%
+palmtrace_all_df <- palmtrace %>%
+  mutate(DATE = paste0(month,"-",year), date=as.Date(zoo::as.yearmon(DATE, "%B-%Y"))) %>%
+  select(date,variable=chart_name,type,value)
+
+palmtrace_prices_df <- palmtrace %>%
   mutate(DATE = paste0(month,"-",year), DATE=as.Date(zoo::as.yearmon(DATE, "%B-%Y"))) %>%
   filter(str_detect(chart_name, "CSPO") & type == "Price (USD)") %>%
   select(-year,-month) %>%
@@ -67,4 +72,5 @@ fred_palmtrace <- palmtrace_df %>%
   #filter(str_detect(chart_name, "CSPO") & type == "Price (USD)") %>%
   #select(DATE,VALUE=value) %>%
   left_join(fred_cpo,by="DATE") %>%
-  rename(FRED_CPO_PRICE_USDPMT=PPOILUSDM)
+  rename(FRED_CPO_PRICE_USDPMT=PPOILUSDM) %>%
+  pivot_longer(cols = c("PT_CSPO_MARKET_TRADES_PRICE_USD","PT_IS_CSPO_CREDIT_SALES_PRICE_USD","FRED_CPO_PRICE_USDPMT"), names_to = "TYPE",values_to="PRICE_USD")
