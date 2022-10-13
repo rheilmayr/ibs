@@ -57,7 +57,7 @@ palmtrace <- read_csv(paste0(wdir,"rspo_palmtrace.csv"))
 fred_cpo <- read_csv(paste0(wdir,"PPOILUSDM.csv"))
 
 # BAPPETI (Commodity Futures Trading Regulatory Agency)
-bappeti_cpo <- read_csv(paste0(wdir,"CPO-bappebti.csv"))
+bappebti_cpo <- read_csv(paste0(wdir,"CPO-bappebti.csv"))
 
 ## clean and merge data -----------------------
 
@@ -73,7 +73,7 @@ palmtrace_prices_df <- palmtrace %>%
   pivot_wider(names_from = "chart_name",values_from="value") %>%
   select(DATE,PT_CSPO_MARKET_TRADES_PRICE_USD=`CSPO On Market Trades`,PT_IS_CSPO_CREDIT_SALES_PRICE_USD=`IS CSPO Credit Sales`)
 
-bappeti_df <- bappeti_cpo %>%
+bappebti_df <- bappebti_cpo %>%
   select(DATE = Tanggal,LOCATION=Lokasi,TRADE_TYPE=Penyerahan,VALUE=Harga,UNIT=Satuan) %>%
   mutate(SOURCE = "BAPPEBTI",COMMODITY = "CPO", UNIT = ifelse(str_detect(UNIT, "^US"), "USD/MT","RP/KG"))
 
@@ -81,17 +81,17 @@ fred_df <- fred_cpo %>%
   mutate(VALUE = PPOILUSDM,UNIT = "USD/MT",COMMODITY="CPO", SOURCE="FRED") %>%
   select(-PPOILUSDM)
   
-fred_palmtrace <- palmtrace_prices_df %>% 
-  #filter(str_detect(chart_name, "CSPO") & type == "Price (USD)") %>%
-  #select(DATE,VALUE=value) %>%
-  left_join(fred_cpo,by="DATE") %>%
-  rename(FRED_CPO_PRICE_USDPMT=PPOILUSDM) %>%
-  pivot_longer(cols = c("PT_CSPO_MARKET_TRADES_PRICE_USD","PT_IS_CSPO_CREDIT_SALES_PRICE_USD","FRED_CPO_PRICE_USDPMT"), names_to = "TYPE",values_to="PRICE_USD")
+#fred_palmtrace <- palmtrace_prices_df %>% 
+#  #filter(str_detect(chart_name, "CSPO") & type == "Price (USD)") %>%
+#  #select(DATE,VALUE=value) %>%
+#  left_join(fred_cpo,by="DATE") %>%
+#  rename(FRED_CPO_PRICE_USDPMT=PPOILUSDM) %>%
+#  pivot_longer(cols = c("PT_CSPO_MARKET_TRADES_PRICE_USD","PT_IS_CSPO_CREDIT_SALES_PRICE_USD","FRED_CPO_PRICE_USDPMT"), names_to = "TYPE",values_to="PRICE_USD")
 
 
 ## merge datasets
 merge_df <- palmtrace_all_df %>%
-  bind_rows(bappeti_df) %>%
+  bind_rows(bappebti_df) %>%
   bind_rows(fred_df) %>%
   select(DATE,TRADE_TYPE,UNIT,VALUE,LOCATION,COMMODITY,SOURCE) %>%
   arrange(-desc(DATE))
