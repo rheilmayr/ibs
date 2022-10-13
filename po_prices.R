@@ -10,7 +10,7 @@
 ##
 ## Notes: Palmtrace data scraped from : https://rspo.org/palmtrace
 ##        FRED data from : https://fred.stlouisfed.org/series/PPOILUSDM
-##        BAPPETI data from : https://bappebti.go.id/harga_komoditi_bursa
+##        BAPPEBTI data from : https://bappebti.go.id/harga_komoditi_bursa
 ##   
 ##
 ## ---------------------------------------------------------
@@ -62,8 +62,9 @@ bappeti_cpo <- read_csv(paste0(wdir,"CPO-bappebti.csv"))
 ## clean and merge data -----------------------
 
 palmtrace_all_df <- palmtrace %>%
-  mutate(DATE = paste0(month,"-",year), date=as.Date(zoo::as.yearmon(DATE, "%B-%Y"))) %>%
-  select(date,variable=chart_name,type,value)
+  mutate(DATE = paste0(month,"-",year), DATE=as.Date(zoo::as.yearmon(DATE, "%B-%Y"))) %>%
+  select(DATE,TRADE_TYPE=chart_name,UNIT=type,VALUE=value) %>%
+  mutate(SOURCE = "PALMTRACE", COMMODITY = if_else(str_detect(TRADE_TYPE, "^CSPO"), "CPO", "PKO"))
 
 palmtrace_prices_df <- palmtrace %>%
   mutate(DATE = paste0(month,"-",year), DATE=as.Date(zoo::as.yearmon(DATE, "%B-%Y"))) %>%
@@ -73,11 +74,27 @@ palmtrace_prices_df <- palmtrace %>%
   select(DATE,PT_CSPO_MARKET_TRADES_PRICE_USD=`CSPO On Market Trades`,PT_IS_CSPO_CREDIT_SALES_PRICE_USD=`IS CSPO Credit Sales`)
 
 bappeti_df <- bappeti_cpo %>%
-  select(DATE = Tanggal, LOCATION=Lokasi,SUBMISSION=Penyerahan,PRICE=Harga,UNIT=Satuan)
+  select(DATE = Tanggal,LOCATION=Lokasi,TRADE_TYPE=Penyerahan,VALUE=Harga,UNIT=Satuan) %>%
+  mutate(SOURCE = "BAPPEBTI",COMMODITY = "CPO", UNIT = ifelse(str_detect(UNIT, "^US"), "USD/MT","RP/KG"))
+
+fred_df <- fred_cpo %>%
+  mutate(VALUE = PPOILUSDM,UNIT = "USD/MT",COMMODITY="CPO", SOURCE="FRED") %>%
+  select(-PPOILUSDM)
   
-fred_palmtrace <- palmtrace_df %>% 
+fred_palmtrace <- palmtrace_prices_df %>% 
   #filter(str_detect(chart_name, "CSPO") & type == "Price (USD)") %>%
   #select(DATE,VALUE=value) %>%
   left_join(fred_cpo,by="DATE") %>%
   rename(FRED_CPO_PRICE_USDPMT=PPOILUSDM) %>%
   pivot_longer(cols = c("PT_CSPO_MARKET_TRADES_PRICE_USD","PT_IS_CSPO_CREDIT_SALES_PRICE_USD","FRED_CPO_PRICE_USDPMT"), names_to = "TYPE",values_to="PRICE_USD")
+
+
+## merge datasets
+merge_df <- palmtrace_all_df %>%
+  bind_rows(bappeti_df) %>%
+  bind_rows(fred_df) %>%
+  select(DATE,TRADE_TYPE,UNIT,VALUE,LOCATION,COMMODITY,SOURCE) %>%
+  arrange(-desc(DATE))
+
+## export to csv --------------------------
+write_csv(merge_df,paste0(wdir,"po_prices.csv"))
