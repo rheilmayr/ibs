@@ -14,8 +14,6 @@ library(tidyverse)
 library(lubridate)
 library(janitor)
 library(forcats)
-library(anomalize) # Need to add anomaly detection
-library(tibbletime)
 library(stringr)
 
 
@@ -160,7 +158,9 @@ rpo_price_table <- rpo_bol %>%
 
 rpo_price_table %>% 
   ggplot(aes(x = month_yr, y = unit_price, group = certification, color = certification)) +
-  geom_line()
+  geom_line() +
+  theme_bw() +
+  xlab("Price")
 
 rpo_price_table_wide <- rpo_price_table %>% 
   pivot_wider(names_from = certification, values_from = unit_price)
