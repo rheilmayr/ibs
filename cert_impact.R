@@ -78,7 +78,40 @@ all_mills <- mill_est %>%
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Load and clean data ----- 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Process Kim's supply chain model data
+sc_df <- read.csv(paste0(wdir, "carlson/ffbDataset.csv"))
+sc_df <- sc_df %>% 
+  select(millCode, ffbYear, supplyChain2) %>% 
+  distinct() %>% 
+  mutate(supplyChain2 = ifelse(supplyChain2 == "unknown", NA, supplyChain2),
+         supplyChain2 = ifelse(supplyChain2 == "MB and IP/SG", "IP/SG", supplyChain2))
+
+first_ip <- sc_df %>% 
+  filter(supplyChain2 == "IP/SG") %>% 
+  group_by(millCode) %>% 
+  summarise(first_ip_yr = min(ffbYear))
+
+mills_w_sc <- sc_df %>% 
+  select(millCode) %>% 
+  distinct() %>% 
+  left_join(first_ip, by = "millCode") %>% 
+  mutate(first_ip_yr = replace_na(first_ip_yr, 9999),
+         trase_code = str_replace(millCode, "M", "M-0")) %>% 
+  select(-millCode)
+
+# Load main dataset
 df <- read.csv(paste0(wdir, "ibs\\ibs_matched_rspo_ci_year.csv"))
+df <- df %>% 
+  left_join(mills_w_sc, by = "trase_code")
+df <- df %>% 
+  mutate(ever_ipsg = first_ip_yr < 9999,
+         only_mb = first_ip_yr == 9999)
+
+## Data issue - shouldn't be getting cert==0 and either MB or IPSG
+df %>% group_by(cert, ever_ipsg) %>% tally()
+df %>% group_by(cert, only_mb) %>% tally()
+
+
 stata_df <- read_dta(paste0(wdir, "ibs\\ucsb_ibs_tfp.dta")) %>% 
   select(firm_id, year, tfp, mkup)
 df <- df %>% 
@@ -286,8 +319,8 @@ run_did <- function(out_var, did_data, control = "notyettreated", save_plot = FA
   
   did_plot <- plot_did(out_var, agg_did)
   ymax <- layer_scales(did_plot)$y$range$range[2]
-  did_plot <- did_plot + 
-    annotate("text", x =0.1, y = (ymax - 0.1), label = paste0("Overall ATT: ", att, ";\nSE: ", att.se), hjust = 0)
+  # did_plot <- did_plot + 
+  #   annotate("text", x =0.1, y = (ymax - 0.1), label = paste0("Overall ATT: ", att, ";\nSE: ", att.se), hjust = 0)
   
   trend_plot <- plot_trends(out_var, did_data)
   
@@ -332,11 +365,19 @@ var_list <- list("ln_va",
                  "ln_rev",
                  "ln_ffb_price",
                  "ln_cpo_premium",
-                 "ln_wage")
+                 "ln_wage",
+                 "ln_tfp",
+                 "ln_mkup")
 
 for (out_var in var_list) {
   run_did(out_var, mod_df, save_plot = TRUE)
 }
+
+ip_df <- mod_df %>% filter(cert==0 | ever_ipsg==1)
+mb_df <- mod_df %>% filter(cert==0 | ever_ipsg==0)
+run_did("ln_cpo_premium", ip_df, save_plot = FALSE)
+run_did("ln_cpo_premium", mb_df, save_plot = FALSE)
+
 
 
 # Contrasting two possible designs
