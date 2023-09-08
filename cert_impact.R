@@ -99,23 +99,31 @@ mills_w_sc <- sc_df %>%
          trase_code = str_replace(millCode, "M", "M-0")) %>% 
   select(-millCode)
 
-# Load main dataset
+# Load main IBS/CEL merged dataset
 df <- read.csv(paste0(wdir, "ibs\\ibs_matched_rspo_ci_year.csv"))
 df <- df %>% 
-  group_by(trase_code) %>% 
-  mutate(ever_cert = max(cert))
+  mutate(ever_cert = cert_start > 0)
 
+# Merge these datasets
 df <- df %>% 
   left_join(mills_w_sc, by = "trase_code")
 df <- df %>% 
   mutate(ever_ipsg = first_ip_yr < 9999,
          only_mb = first_ip_yr == 9999)
 
-## Data issue - shouldn't be getting cert==0 and either MB or IPSG
+## Data issue - shouldn't be getting cert==FALSE and either MB or IPSG
 df %>% group_by(ever_cert, ever_ipsg) %>% tally()
 df %>% group_by(ever_cert, only_mb) %>% tally()
 
 
+
+
+
+
+
+
+
+## Continue with old script - can be ignored for the current moment
 stata_df <- read_dta(paste0(wdir, "ibs\\ucsb_ibs_tfp.dta")) %>% 
   select(firm_id, year, tfp, mkup)
 df <- df %>% 
