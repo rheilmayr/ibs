@@ -54,11 +54,10 @@ if (length(file_name)==0){
 
 file_content <- fromJSON(txt=file_name)$personal
 dropbox_dir <- file_content$path
-wdir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\data\\")
-setwd(wdir)
-fig_dir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\output\\figs\\")
+wdir <- "remote/data/"
+fig_dir <- "remote/output/figs/"
 
-## Full trase mill list
+## Full trase mill list - NOTE: should probably move a copy of this to the project's data directory
 trase_dir <- paste0(dropbox_dir, "\\collaborations\\trase\\Trase\\Indonesia\\palm\\mill_lists\\tracker\\")
 mill_est <- read_xlsx(paste0(trase_dir, "mill_yr_tracker.xlsx"))
 mill_est <- mill_est %>% 
