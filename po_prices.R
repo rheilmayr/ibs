@@ -45,19 +45,19 @@ if (length(file_name)==0){
 
 file_content <- fromJSON(txt=file_name)$personal
 dropbox_dir <- file_content$path
-wdir <- paste0(dropbox_dir,"\\kraus\\data\\ucsb\\")
+wdir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\data\\")
 setwd(wdir)
 
 ## read data ----------------------------------
 
 # palm trace
-palmtrace <- read_csv(paste0(wdir,"rspo_palmtrace.csv"))
+palmtrace <- read_csv(paste0(wdir,"ucsb\\rspo_palmtrace.csv"))
 
 # FRED CPO prices
-fred_cpo <- read_csv(paste0(wdir,"PPOILUSDM.csv"))
+fred_cpo <- read_csv(paste0(wdir,"ucsb\\PPOILUSDM.csv"))
 
 # BAPPETI (Commodity Futures Trading Regulatory Agency)
-bappebti_cpo <- read_csv(paste0(wdir,"CPO-bappebti.csv"))
+bappebti_cpo <- read_csv(paste0(wdir,"ucsb\\CPO-bappebti.csv"))
 
 ## clean and merge data -----------------------
 
@@ -95,6 +95,23 @@ merge_df <- palmtrace_all_df %>%
   bind_rows(fred_df) %>%
   select(DATE,TRADE_TYPE,UNIT,VALUE,LOCATION,COMMODITY,SOURCE) %>%
   arrange(-desc(DATE))
+
+## left join
+pt_premium <- fred_df %>% 
+  inner_join(palmtrace_prices_df, by = "DATE")
+
+pt_premium <- pt_premium %>% 
+  mutate(cspo_premium = PT_CSPO_MARKET_TRADES_PRICE_USD / VALUE,
+         is_premium = PT_IS_CSPO_CREDIT_SALES_PRICE_USD / VALUE)
+
+pt_premium %>% 
+  ggplot(aes(x = DATE, y = cspo_premium)) +
+  geom_line()
+
+pt_premium %>% 
+  ggplot(aes(x = DATE, y = is_premium)) +
+  geom_line()
+
 
 ## export to csv --------------------------
 write_csv(merge_df,paste0(wdir,"po_prices.csv"))
