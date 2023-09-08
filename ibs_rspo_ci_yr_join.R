@@ -113,8 +113,9 @@ ibs_rspo_merge <- ibs_rspo_merge %>%
          ln_materials = log(materials_tot_imp2),
          ln_electricity = log(elec_qty_imp2),
          ln_fc_add = log(fc_add_imp),
-         ln_fc_est_tot = log(fc_est_tot_imp6co),
-         ln_labor_cost = log(workers_prod_imp2 * wage_prod_imp2)) # Aug 2022 - Valentin and Sebastian confirm that this is the correct fixed capital variable
+         ln_fc_est_tot = log(fc_est_tot_imp6co), # Aug 2022 - Valentin and Sebastian confirm that this is the correct fixed capital variable
+         ln_labor_cost = log(workers_prod_imp2 * wage_prod_imp2),
+         ln_gifts = log(gifts)) 
 
 
 ibs_rspo_merge
