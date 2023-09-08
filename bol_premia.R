@@ -156,11 +156,20 @@ rpo_price_table <- rpo_bol %>%
   mutate(unit_price = fob / volume) %>% 
   select(month_yr, certification, unit_price)
 
+library(zoo)
+
 rpo_price_table %>% 
+  mutate(month_yr = as.Date((as.yearmon(month_yr))),
+         unit_price = unit_price * 1000) %>% 
   ggplot(aes(x = month_yr, y = unit_price, group = certification, color = certification)) +
-  geom_line() +
-  theme_bw() +
-  xlab("Price")
+  geom_line(aes(linetype = certification), size = 1) +
+  scale_linetype_manual(values=c("solid", "dashed", "solid")) +
+  theme_bw(base_size = 20) +
+  xlab("Date") +
+  ylab("Price ($/tonne)") +
+  scale_color_manual(values=c("#29AF7FFF", "#440154FF", "#440154FF"))
+
+
 
 rpo_price_table_wide <- rpo_price_table %>% 
   pivot_wider(names_from = certification, values_from = unit_price)
