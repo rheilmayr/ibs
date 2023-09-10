@@ -79,24 +79,27 @@ all_mills <- mill_est %>%
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Process Kim's supply chain model data
 sc_df <- read.csv(paste0(wdir, "carlson/ffbDataset.csv"))
+carlson_key <- read.csv(paste0(wdir, "carlson/ucsb_carlson_join.csv"))
 sc_df <- sc_df %>% 
-  select(millCode, ffbYear, supplyChain2) %>% 
+  left_join(carlson_key %>% select(millCode = code, trase_code), by = "millCode")
+sc_df <- sc_df %>% 
+  select(trase_code, year = ffbYear, supplyChain2) %>% 
   distinct() %>% 
   mutate(supplyChain2 = ifelse(supplyChain2 == "unknown", NA, supplyChain2),
          supplyChain2 = ifelse(supplyChain2 == "MB and IP/SG", "IP/SG", supplyChain2))
 
 first_ip <- sc_df %>% 
   filter(supplyChain2 == "IP/SG") %>% 
-  group_by(millCode) %>% 
-  summarise(first_ip_yr = min(ffbYear))
+  group_by(trase_code) %>% 
+  summarise(first_ip_yr = min(ffbYear)) %>% 
+  drop_na()
 
 mills_w_sc <- sc_df %>% 
-  select(millCode) %>% 
+  select(trase_code) %>% 
   distinct() %>% 
-  left_join(first_ip, by = "millCode") %>% 
-  mutate(first_ip_yr = replace_na(first_ip_yr, 9999),
-         trase_code = str_replace(millCode, "M", "M-0")) %>% 
-  select(-millCode)
+  left_join(first_ip, by = "trase_code") %>% 
+  mutate(first_ip_yr = replace_na(first_ip_yr, 9999)) %>% # 9999 indicates it has a supply chain model assigned, but is never identified as IP/Seg
+  drop_na()
 
 # Load main IBS/CEL merged dataset
 df <- read.csv(paste0(wdir, "ibs\\ibs_matched_rspo_ci_year.csv"))
@@ -105,7 +108,8 @@ df <- df %>%
 
 # Merge these datasets
 df <- df %>% 
-  left_join(mills_w_sc, by = "trase_code")
+  left_join(mills_w_sc, by = "trase_code") %>% 
+  left_join(sc_df, by = c("trase_code", "year"))
 df <- df %>% 
   mutate(ever_ipsg = first_ip_yr < 9999,
          only_mb = first_ip_yr == 9999)
@@ -384,16 +388,40 @@ for (out_var in var_list) {
   run_did(out_var, mod_df, save_plot = TRUE)
 }
 
-ip_df <- mod_df %>% filter(cert==0 | ever_ipsg==1)
-mb_df <- mod_df %>% filter(cert==0 | ever_ipsg==0)
-run_did("ln_cpo_premium", ip_df, save_plot = FALSE)
-run_did("ln_cpo_premium", mb_df, save_plot = FALSE)
-
-
-
 # Contrasting two possible designs
 run_did("ln_wage", mod_df, control = "notyettreated", save_plot = FALSE)
 run_did("ln_wage", mod_df %>% filter(cert_start!=0), control = "notyettreated", save_plot = FALSE)
+
+
+## Digging into heterogeneity by supply chain model
+# Using old model variable (non-time varying, and possibly outdated)
+mod <- feols(ln_cpo_premium ~ I(cert):I(model) | year + firm_id, data = mod_df)
+
+# Using Kim/Sita's data from annual reports
+ip_df <- mod_df %>% filter(cert==0 | ever_ipsg==1)
+mb_df <- mod_df %>% filter(cert==0 | ever_ipsg==0)
+run_did("ln_ffb_price", ip_df, save_plot = FALSE)
+run_did("ln_ffb_price", mb_df, save_plot = FALSE)
+
+# mod <- feols(ln_cpo_premium ~ I(cert) * I(model) | year + firm_id, data = mod_df)
+
+mod_df <- mod_df %>% 
+  mutate(supplyChain2 = ifelse(ever_cert == 0, "NoModel", supplyChain2))
+mod <- feols(ln_rev ~ i(supplyChain2, ref = "MB") | year + firm_id, data = mod_df)
+summary(mod)
+
+# Identifying which additional mills should have supply chain model data digitized
+carlson_key <- carlson_key %>% 
+  select(code, trase_code)
+to_digitize = df %>% 
+  filter(ever_cert == 1,
+         is.na(ever_ipsg)) %>% 
+  select(trase_code, mill_name, parent_co) %>% 
+  distinct() %>%
+  left_join(carlson_key, by = "trase_code") %>% 
+  arrange(code)
+
+to_digitize %>% write_csv(paste0(wdir, "carlson/to_digitize.csv"))
 
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
