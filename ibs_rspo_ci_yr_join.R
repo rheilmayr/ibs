@@ -32,43 +32,70 @@ if (length(file_name)==0){
 
 file_content <- fromJSON(txt=file_name)$personal
 dropbox_dir <- file_content$path
-ibs_dir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\data\\ibs\\")
+ibs_dir <- paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\data\\")
 rspo_dir <- paste0(dropbox_dir,"\\collaborations\\trase\\Trase\\Indonesia\\palm\\mill_lists\\")
 
+#ibs_dir <- paste0(dropbox_dir,"\\kraus\\data\\")
 
 # read and clean data ----------------------------------------------------
 
-rspo_mills <- read_xlsx(paste0(rspo_dir,"rspoCert.xlsx"))
+# rspo certification
+rspo_mills <- read_xlsx(paste0(ibs_dir,"ucsb\\mill_rspo_certification.xlsx"))
+rspo_refs <-  read_xlsx(paste0(ibs_dir,"ucsb\\refinery_rspo_certification.xlsx"))
+
+rspo_status <- rspo_mills %>%
+  bind_rows(rspo_refs) %>%
+  select(code,trase_code,model,ICDate)
 
 # read smallholder shares
 small_shr <- read_csv(paste0(dropbox_dir,"\\collaborations\\indonesia\\indo_mill_spillovers\\ucsb-kraus\\data\\ucsb\\mill_smallholder_share.csv")) %>% 
   rename(trase_code = mill_id)
 
 # reformat data 
-
-cert_mills <- rspo_mills %>%
+rspo_status_clean <- rspo_status %>%
   select(uh_code=code,trase_code,ICDate,model) %>%
-  mutate(ci_year = format(as.Date(ICDate, format="%Y-%M-%d %H:%M:%S"),"%Y")) %>%
+  mutate(ci_year = format(as.Date(ICDate, format="%Y-%M-%d %H:%M:%S"),"%Y"),
+         ci_year = as.integer(ci_year)) %>%
   select(-ICDate,-uh_code)
 
-# read ibs matched mills 
+# read ibs matched mills and refineries
+# mills
+ibs_mills <- read_excel(paste0(ibs_dir,"ibs\\IBS_UML_panel_final.xlsx")) %>%
+  mutate(firm_id = as.character(firm_id))
 
-ibs_mills <- read_excel(paste0(ibs_dir,"IBS_UML_panel_final.xlsx"))
+# refineries
+ibs_refs <- read_xlsx(paste0(ibs_dir,"ibs\\refineries_matching\\temp_data\\trase_ibs_refinery_panel.xlsx")) %>%
+  mutate(trase_code=trase_id) %>%
+  rename(firm_id=ibs_firm_id)
 
-# merge ibs mills with rspo CI year
-ibs_rspo_merge <- ibs_mills %>%
-  left_join(cert_mills,by="trase_code")
+# merge mills and refineries datasets
+ibs_refs_mills_merge <- list(ibs_mills,ibs_refs) %>% 
+  dplyr::bind_rows() %>% 
+  readr::type_convert()
 
+# merge with rspo CI year
+ibs_rspo_merge <- ibs_refs_mills_merge %>%
+  left_join(rspo_status_clean,by="trase_code")
 
-# check number of unique mills matched
+# check number of unique mills/refineries matched
 ibs_rspo_merge %>%
   distinct(trase_code) %>%
   drop_na() %>%
   count() %>% 
   print()
 
-# check number of unique mills matched that are rspo certified
+# check number of unique mills/refineries matched that are rspo certified
+# mills
 ibs_rspo_merge %>%
+  filter(stringr::str_detect(trase_code, 'M-')) %>%
+  distinct(trase_code,ci_year) %>%
+  drop_na() %>%
+  count() %>% 
+  print()
+
+# refineries
+ibs_rspo_merge %>%
+  filter(stringr::str_detect(trase_code, 'R-')) %>%
   distinct(trase_code,ci_year) %>%
   drop_na() %>%
   count() %>% 
@@ -82,11 +109,9 @@ ibs_rspo_merge %>%
 ibs_rspo_merge <- ibs_rspo_merge %>% 
   rename(workers_total_imp2 = workers_total_imp2...112)
 
-
 # merge smallholder data
 ibs_rspo_merge <- ibs_rspo_merge %>% 
   left_join(small_shr, by = "trase_code")
-
 
 # drop data without known certification status
 ibs_rspo_merge <- ibs_rspo_merge %>% 
@@ -116,7 +141,6 @@ ibs_rspo_merge <- ibs_rspo_merge %>%
          ln_fc_est_tot = log(fc_est_tot_imp6co), # Aug 2022 - Valentin and Sebastian confirm that this is the correct fixed capital variable
          ln_labor_cost = log(workers_prod_imp2 * wage_prod_imp2),
          ln_gifts = log(gifts)) 
-
 
 ibs_rspo_merge
 
